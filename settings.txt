@@ -1,0 +1,14 @@
+OUTPUT_CONTAINER = gsc-cleaned
+
+PGVECTOR_DATABASE_URL = postgresql://pgvectoradmin:<YOUR_PASSWORD>@owui-pgvector.postgres.database.usgovcloudapi.net:5432/pgvector?sslmode=require
+CHUNK_TABLE_NAME = gsc_vector_rag
+COLLECTION_NAME = gsc-internal-policies
+
+AZURE_OPENAI_BASE_URL = https://aiml-aoai-api-test.gc1.myngc.com/v2
+AZURE_OPENAI_API_KEY = <YOUR_API_KEY>
+AZURE_OPENAI_EMBEDDING_DEPLOYMENT = text-embedding-ada-002
+
+EMBEDDING_DIMENSIONS = 1536
+REQUEST_TIMEOUT_SECONDS = 120
+CHUNK_SIZE = 120
+CHUNK_OVERLAP = 20
