@@ -12,3 +12,5 @@ EMBEDDING_DIMENSIONS = 1536
 REQUEST_TIMEOUT_SECONDS = 120
 CHUNK_SIZE = 120
 CHUNK_OVERLAP = 20
+
+az resource list --name function-app-shiv-gsc-test --resource-type "Microsoft.Web/sites" --query "[].resourceGroup" -o tsv
