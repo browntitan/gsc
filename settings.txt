@@ -14,3 +14,14 @@ CHUNK_SIZE = 120
 CHUNK_OVERLAP = 20
 
 az resource list --name function-app-shiv-gsc-test --resource-type "Microsoft.Web/sites" --query "[].resourceGroup" -o tsv
+
+az cloud set --name AzureUSGovernment
+az login
+az account set --subscription "ES-US-T-CDOOAIPOC-SUB-01"
+az account show --output table
+
+
+az functionapp config appsettings list \
+  --name function-app-shiv-gsc-test \
+  --resource-group function-app-shiv-gsc-test_group \
+  --subscription "ES-US-T-CDOOAIPOC-SUB-01"
