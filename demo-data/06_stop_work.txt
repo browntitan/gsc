@@ -1,0 +1,53 @@
+6. Stop Work
+
+Demo note: Synthetic demo clause content created for retrieval testing. It is fictional and not authoritative internal policy text.
+
+Table of Contents
+Applicable For
+Intent
+References
+Common Exceptions / Suggested Responses
+Additional Resources
+
+Applicable
+For
+CTM-P-ST-002
+CTM-P-ST-005
+CTM-P-ST-006
+CTM-P-ST-007
+
+Intent
+Clause 6 gives Northrop Grumman the ability to direct an orderly pause in performance when program priorities, customer direction, funding, or technical conditions require work to stop temporarily. The clause is designed to preserve control over resume or termination decisions, limit unnecessary cost accumulation during the stop period, and document any equitable adjustment through a disciplined written process.
+
+Common Exceptions / Suggested Responses
+
+Subparagraph A
+Supplier self-directed stop rights. Some supplier forms allow the supplier to suspend work whenever it believes instructions are incomplete, commercial terms are disputed, or invoices are overdue. That type of unilateral suspension can disrupt customer commitments and should not be embedded in the buyer's stop work clause.
+
+Subparagraph B
+Automatic cost accrual during the stop period. Suppliers may try to recover all standby, overhead, storage, or subcontractor costs incurred during a stop-work period without demonstrating reasonableness or mitigation. This creates open-ended exposure for the buyer.
+
+Subparagraph C
+Automatic schedule extensions after any stop-work order. A supplier may seek a default right to extend delivery dates for the full duration of the stop period plus restart time, regardless of whether the stopped work was on the critical path or whether mitigation was possible.
+
+Suggested Responses
+
+Subparagraph A
+Issue: Supplier adds a right to stop work whenever the parties dispute pricing, direction, or invoice status.
+Response: Remove unilateral supplier suspension rights from this clause. If the supplier believes performance is impaired, require prompt written notice and escalation through procurement rather than self-help suspension.
+
+Subparagraph B
+Issue: Supplier seeks reimbursement for all standby and overhead costs incurred during the stop period without itemization.
+Response: Limit recovery to reasonable, allocable, and documented costs that could not be avoided with prudent mitigation. Require the supplier to protect inventory, minimize subcontractor charges, and submit detailed support before any adjustment is approved.
+
+Subparagraph C
+Issue: Supplier requests automatic schedule relief equal to the full stop period plus ramp-up time.
+Response: Tie any schedule adjustment to demonstrated critical-path impact and actual restart effort. Preserve the buyer's discretion to resume work, rephase scope, or terminate the order instead of granting automatic extensions.
+
+Additional Resources
+Coordinate any stop-work negotiation with procurement, program management, finance, and the affected technical lead. If the supplier supports a regulated or customer-directed program, ensure any stop or restart language is consistent with prime contract notice obligations and funding controls.
+
+References
+Use the internal stop-work and suspension playbooks, equitable-adjustment checklist, and cost documentation template when evaluating edits. If a government customer is involved, compare the proposed language against any flowed stop-work or suspension clauses in the prime contract.
+
+Back to HomePage

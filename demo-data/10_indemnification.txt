@@ -1,0 +1,53 @@
+10. Indemnification
+
+Demo note: Synthetic demo clause content created for retrieval testing. It is fictional and not authoritative internal policy text.
+
+Table of Contents
+Applicable For
+Intent
+References
+Common Exceptions / Suggested Responses
+Additional Resources
+
+Applicable
+For
+CTM-P-ST-003
+CTM-P-ST-004
+CTM-P-ST-005
+CTM-P-ST-007
+
+Intent
+Clause 10 requires the supplier to defend, indemnify, and hold harmless Northrop Grumman and its customers against third-party claims arising from the supplier's products, services, acts, omissions, or legal noncompliance. The clause is intended to preserve protection for bodily injury, property damage, intellectual property infringement, export violations, confidentiality failures, and data-security events that can result in substantial pass-through exposure.
+
+Common Exceptions / Suggested Responses
+
+Subparagraph A
+Indemnity limited to proven negligence. Suppliers often try to narrow indemnity so it applies only after final adjudication of the supplier's negligence. That undermines early defense support and leaves Northrop Grumman exposed while claims are pending.
+
+Subparagraph B
+No duty to defend or control claims. A supplier may agree only to reimburse losses after resolution and refuse any duty to defend, manage counsel, or fund claim response. This can force the buyer to absorb significant litigation or investigation costs up front.
+
+Subparagraph C
+Exclusions for intellectual property, cyber, privacy, or regulatory claims. Suppliers sometimes carve out patent infringement, trade secret misuse, privacy incidents, export-control violations, or subcontractor-caused harm from indemnity. Those are often the exact risk categories Northrop Grumman needs covered.
+
+Suggested Responses
+
+Subparagraph A
+Issue: Supplier says indemnification applies only to losses finally determined by a court to result from the supplier's negligence.
+Response: Require indemnity to apply to third-party claims arising out of the supplier's products, services, or breach, subject to customary causation limits if needed. Do not require final adjudication before the supplier must support defense and settlement activity.
+
+Subparagraph B
+Issue: Supplier deletes the duty to defend and offers only reimbursement after final judgment.
+Response: Preserve a prompt duty to defend or, at minimum, to fund reasonable defense costs as claims arise. Control-of-defense provisions may be negotiated, but Northrop Grumman should retain approval rights over counsel, settlement, and any admission affecting the buyer or customer.
+
+Subparagraph C
+Issue: Supplier excludes intellectual property infringement, data-security incidents, and subcontractor conduct from indemnity.
+Response: Restore coverage for IP infringement, confidentiality and privacy breaches, export or sanctions violations, and claims caused by the supplier's subcontractors. These exposures routinely flow through to Northrop Grumman and should not be carved out casually.
+
+Additional Resources
+Escalate all indemnification edits to Supply Chain Legal, cybersecurity counsel, and risk management. If the supplier provides software, technical data, or export-controlled items, document any negotiated carve-outs in the program risk register and confirm that insurance coverage aligns with the indemnity structure.
+
+References
+Use the internal indemnity playbook, IP infringement response guide, and cyber incident response requirements when reviewing this clause. Where customer or government flowdowns impose specific defense or pass-through obligations, ensure the supplier clause is broad enough to support those commitments.
+
+Back to HomePage

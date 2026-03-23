@@ -1,0 +1,54 @@
+7. Termination
+
+Demo note: Synthetic demo clause content created for retrieval testing. It is fictional and not authoritative internal policy text.
+
+Table of Contents
+Applicable For
+Intent
+References
+Common Exceptions / Suggested Responses
+Additional Resources
+
+Applicable
+For
+CTM-P-ST-001
+CTM-P-ST-003
+CTM-P-ST-004
+CTM-P-ST-005
+CTM-P-ST-007
+
+Intent
+Clause 7 preserves Northrop Grumman's ability to terminate the order for convenience or default while managing transition, payment, and disposition of work in process. The clause is intended to let the buyer end work cleanly, obtain usable deliverables and supporting data, and avoid supplier-imposed termination charges that exceed the value of accepted work and reasonable closeout costs.
+
+Common Exceptions / Suggested Responses
+
+Subparagraph A
+Supplier termination fees or guaranteed profit. Suppliers may try to add fixed termination charges, recovery of lost profits on unperformed work, or make-whole payments that apply even to a convenience termination. Those additions can materially increase exit cost and reduce buyer flexibility.
+
+Subparagraph B
+Termination only after lengthy cure rights. Supplier forms may require multiple notices, extended cure periods, or proof of material breach before any default remedy is available. That can delay action when performance failure is already affecting customer commitments.
+
+Subparagraph C
+Retention of work product, tooling, or data pending payment disputes. A supplier may condition turnover of partially completed work, drawings, or special tooling on payment of disputed amounts. That impedes transition to alternate supply and can jeopardize customer delivery schedules.
+
+Suggested Responses
+
+Subparagraph A
+Issue: Supplier requests a fixed termination fee plus anticipated profit on all canceled work.
+Response: Limit recovery on a convenience termination to accepted work, reasonable documented closeout costs, and noncancelable commitments properly incurred. Do not agree to guaranteed profit on unperformed work or broad make-whole provisions without executive approval.
+
+Subparagraph B
+Issue: Supplier adds a thirty-day cure period and multiple notice steps before the buyer may terminate for default.
+Response: Keep commercially reasonable notice and cure language, but preserve immediate remedies where delay, insolvency, repeated quality failure, or other material performance issues threaten program performance. Long cure rights should not disable practical default enforcement.
+
+Subparagraph C
+Issue: Supplier conditions release of work in process, tooling, and design data on payment of disputed termination amounts.
+Response: Preserve the buyer's right to receive completed work, partially completed work, special tooling, and related technical data necessary for transition. Handle payment disputes separately so continuity of supply is not held hostage during closeout.
+
+Additional Resources
+Escalate termination-language changes to procurement leadership, program management, finance, and legal because they directly affect exit cost and transition rights. For single-source suppliers, coordinate any concession with supply assurance and alternate-source planning teams.
+
+References
+Use the internal termination settlement guide, default assessment checklist, and transition-support playbook when negotiating this clause. Where government flowdowns apply, compare the language to any mandatory termination rights and settlement rules in the prime contract.
+
+Back to HomePage

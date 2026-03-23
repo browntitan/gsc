@@ -1,0 +1,53 @@
+5. Inspection and Acceptance
+
+Demo note: Synthetic demo clause content created for retrieval testing. It is fictional and not authoritative internal policy text.
+
+Table of Contents
+Applicable For
+Intent
+References
+Common Exceptions / Suggested Responses
+Additional Resources
+
+Applicable
+For
+CTM-P-ST-001
+CTM-P-ST-002
+CTM-P-ST-003
+CTM-P-ST-006
+
+Intent
+Clause 5 preserves Northrop Grumman's right to inspect, test, reject, and require correction of goods or services that do not conform to contract requirements. The clause is intended to prevent deemed acceptance based solely on receipt, preserve remedies for latent defects, and ensure that inspection rights survive repair, replacement, or incomplete supplier corrective action.
+
+Common Exceptions / Suggested Responses
+
+Subparagraph A
+Deemed acceptance after a short review window. Suppliers may try to state that products or services are accepted automatically if the buyer does not reject them within a few days of receipt. That approach is risky for complex assemblies, software, or services where defects may not be discoverable immediately.
+
+Subparagraph B
+Inspection limited to visible defects only. A supplier may attempt to waive the buyer's right to reject latent, hidden, or process-related defects that are discovered during integration, testing, or customer use. That would shift quality risk to Northrop Grumman.
+
+Subparagraph C
+No reinspection after correction. Supplier forms sometimes treat repair or re-performance as final without giving the buyer a meaningful opportunity to reinspect or retest the corrected item. This can leave unresolved quality escapes in the supply chain.
+
+Suggested Responses
+
+Subparagraph A
+Issue: Supplier proposes automatic acceptance if notice of rejection is not issued within five business days of delivery.
+Response: Reject automatic acceptance language. Keep acceptance tied to actual inspection and testing, with explicit survival for latent defects, fraud, and nonconformance discovered after receipt or integration.
+
+Subparagraph B
+Issue: Supplier limits rejection rights to defects visible on initial receipt.
+Response: Preserve the right to reject for latent defects, workmanship issues, process escapes, and nonconformance discovered during downstream testing or customer use. Quality findings are not always apparent during receiving inspection.
+
+Subparagraph C
+Issue: Supplier wants repaired or replaced items deemed accepted once they are re-delivered.
+Response: Require the same inspection, testing, and acceptance rights for repaired, replaced, or re-performed work that apply to the original deliverable. Acceptance should occur only after the corrected item meets contract requirements.
+
+Additional Resources
+Coordinate clause changes with Supplier Quality, receiving inspection, engineering test, and program quality representatives. If the product supports a critical customer program, document any negotiated acceptance timing or sampling variation in the quality plan before award.
+
+References
+Use the internal quality clause library, receiving inspection procedures, and corrective action handbook when evaluating proposed edits. Where government flowdowns apply, compare the negotiated language against any mandatory inspection, acceptance, or warranty requirements in the prime contract.
+
+Back to HomePage

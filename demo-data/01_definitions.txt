@@ -1,0 +1,53 @@
+1. Definitions
+
+Demo note: Synthetic demo clause content created for retrieval testing. It is fictional and not authoritative internal policy text.
+
+Table of Contents
+Applicable For
+Intent
+References
+Common Exceptions / Suggested Responses
+Additional Resources
+
+Applicable
+For
+CTM-P-ST-001
+CTM-P-ST-002
+CTM-P-ST-004
+CTM-P-ST-006
+
+Intent
+Clause 1 establishes the meaning of capitalized terms used throughout the order so pricing, schedule, technical, quality, and compliance obligations are interpreted consistently. Northrop Grumman uses this clause to prevent the supplier from narrowing commitments through informal terminology, external handbooks, or later-issued business process documents that were not incorporated into the agreement.
+
+Common Exceptions / Suggested Responses
+
+Subparagraph A
+Broad or shifting definitions. Suppliers sometimes redefine terms such as "Deliverable," "Acceptance," or "Specifications" so their obligation is narrower than the purchase order requires. Reject definitions that let the supplier control performance through internal procedures or unilateral interpretation.
+
+Subparagraph B
+External references that can change without approval. Defined terms that point to a supplier website, quality manual, or future revision create moving obligations after award. Require the operative definition to live in the signed order or an attached exhibit with revision control.
+
+Subparagraph C
+Undefined affiliates, end users, or customer directives. Suppliers may try to limit obligations only to the named buyer entity and exclude authorized affiliates or flowed-down customer requirements. Clarify that incorporated customer requirements and approved affiliate use cases remain within scope when expressly referenced in the order.
+
+Suggested Responses
+
+Subparagraph A
+Issue: Supplier proposes a definition of "Specifications" that excludes statements of work, drawings, and flowed-down customer requirements.
+Response: Revise the definition so Specifications include the purchase order, attachments, approved drawings, statements of work, and expressly incorporated customer requirements. Do not allow the supplier to narrow the definition through its own forms or manuals.
+
+Subparagraph B
+Issue: Supplier wants defined terms to reference a web-hosted handbook that it may revise after award.
+Response: Move the operative language into the contract or attach a dated copy as an exhibit. Any later revision should require mutual written agreement before it becomes binding.
+
+Subparagraph C
+Issue: Supplier limits defined terms so only the contracting entity may rely on performance, excluding affiliates and downstream customer programs.
+Response: State that authorized affiliates, program offices, and incorporated customer requirements may rely on the definitions when the order expressly permits affiliate use or flowdown performance. Preserve clear order-of-precedence language if conflicting definitions appear elsewhere.
+
+Additional Resources
+Coordinate with Supply Chain Contracts, program counsel, and the drafting owner for any change to defined terms that affects technical scope, acceptance criteria, or flowed-down customer language. Route proposed glossary changes through the same approval path used for the statement of work and order of precedence exhibit.
+
+References
+Internal drafting guide sections on order of precedence, glossary control, and attachment hierarchy are the primary references for this clause. Where the order includes government or customer flowdowns, compare the defined terms against the flowed clause set before accepting supplier language.
+
+Back to HomePage

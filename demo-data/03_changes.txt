@@ -1,0 +1,54 @@
+3. Changes
+
+Demo note: Synthetic demo clause content created for retrieval testing. It is fictional and not authoritative internal policy text.
+
+Table of Contents
+Applicable For
+Intent
+References
+Common Exceptions / Suggested Responses
+Additional Resources
+
+Applicable
+For
+CTM-P-ST-002
+CTM-P-ST-003
+CTM-P-ST-004
+CTM-P-ST-006
+CTM-P-ST-007
+
+Intent
+Clause 3 controls how scope, schedule, technical requirements, and price may be changed after award. Northrop Grumman uses this clause to ensure that only authorized written direction changes the contract, that equitable adjustments are handled through a documented process, and that the supplier continues performance while change discussions are pending unless expressly directed otherwise.
+
+Common Exceptions / Suggested Responses
+
+Subparagraph A
+Constructive change theories based on informal communications. Suppliers may argue that emails, meeting notes, portal comments, or field discussions automatically change the contract. This can create unauthorized cost growth and conflicting records of direction.
+
+Subparagraph B
+Deemed acceptance of price or schedule impacts. Supplier forms may state that any buyer-directed clarification automatically entitles the supplier to an equitable adjustment unless disputed immediately. That shifts administrative burden and invites unilateral pricing claims.
+
+Subparagraph C
+Retroactive schedule relief or suspension of work. Suppliers sometimes want the right to stop performance until a change order is priced or to obtain automatic schedule relief whenever a change is discussed. That can interrupt critical-path performance and undermine customer commitments.
+
+Suggested Responses
+
+Subparagraph A
+Issue: Supplier states that engineering discussions, review comments, or buyer technical assistance may constitute a binding change.
+Response: Keep the clause clear that only a written change issued by authorized procurement personnel modifies the order. Technical direction may clarify performance but does not alter scope, price, or schedule unless incorporated through the formal change process.
+
+Subparagraph B
+Issue: Supplier requests automatic entitlement to additional money or time whenever the buyer issues revised drawings or asks for clarification.
+Response: Require prompt written notice of the alleged impact, supporting cost and schedule detail, and procurement review before any adjustment is effective. Avoid language that deems silence to be acceptance of supplier claims.
+
+Subparagraph C
+Issue: Supplier wants the right to suspend performance until the parties agree on change pricing.
+Response: Preserve the obligation to continue performance pending resolution of a change unless Northrop Grumman expressly directs a stop work action. If schedule relief is warranted, tie it to demonstrated critical-path impact rather than an automatic extension.
+
+Additional Resources
+Coordinate all substantive changes through procurement, the program manager, and finance pricing support. If the proposed change affects configuration control, quality requirements, or customer deliverables, obtain written concurrence from engineering and program controls before issuing revised direction.
+
+References
+Use the internal change-order playbook, delegated authority matrix, and claim documentation checklist as the baseline references for this clause. For government work, compare the negotiated language against any mandatory changes clause flowdowns in the prime contract.
+
+Back to HomePage

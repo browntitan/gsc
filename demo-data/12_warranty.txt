@@ -1,0 +1,128 @@
+Best-effort combined transcription from the two provided images.
+Notes:
+- Some words/lines are partially cut off, obscured by glare, or not visible in the photos.
+- Uncertain or missing portions are marked with [unclear], [truncated], or [not visible].
+
+12. Warranty
+
+This clause aims to safeguard the interests of the Northrop Grumman by ensuring that all Products and Services provided are effec[truncated in image]
+
+Table of Contents
+Applicable For
+Intent
+References
+Common Exceptions / Suggested Responses
+Additional Resources
+
+Applicable
+For
+CTM-P-ST-001
+CTM-P-ST-002
+CTM-P-ST-003
+CTM-P-ST-005
+CTM-P-ST-006
+CTM-P-ST-007
+
+Common Exceptions / Suggested Responses
+
+Subparagraph A
+Modifying the Warranty Clause - NG should be mindful that changes to Clause 12 Warranty could impact other clauses (such as: Clause 9 [unclear]).
+Removing the Warranty Clause - Because the warranty in the standard terms is for an unspecific, "infinite" period, it is common to see [unclear].
+Ultimately, the resulting warranty clause should be consistent with program requirements, appropriate Sector legal and business guidance.
+
+Subparagraph B
+Warranty Period - The warranty period allows NG to require the Supplier to correct any defect for the Product/Service in addition to [unclear].
+[This section continues across multiple wrapped lines in the image.]
+reduces the time commitment and obligation for correcting any malfunction at Supplier's own costs and
+overrides any period of time for NG to perform its own inspection and Acceptance of the Product or Service.
+Deciding on whether the warranty period should start at the point of delivery or upon shipment (another favorite approach by a Supplier)
+The warranty period should not start on the date of the shipment or the date of delivery but shall start upon the date of the Supplier's [acceptance/inspection - unclear].
+does not truncate, overlap or dilute NG's contractual right to inspect and accept the Product or Service and allows for a clean break between [unclear].
+allows NG to exercise its rights under Clauses 9 and 46 and the governing law state's UCC.
+Unspecific Warranty Length - Because of the unspecific length of warranty period in NG's standard terms, Suppliers will frequently request [unclear].
+To accurately set a warranty period, NG must coordinate with their Program office to understand the length of warranty required by the Product/Service.
+"The foregoing warranties shall survive and shall remain in effect for (stated period) after delivery as to each Product."
+However, this may cause the Supplier to request a stated default Acceptance timeline. Note FAR 52.246-2(j) states "The Government shall [unclear]"
+UCC and Other Provisions - The sentence starting, "These warranties shall not..." is a key statement. This allows NG to levy other laws and [unclear].
+Warranty Waivers - As stated in the Intent section, the last sentence in paragraph B mirrors FAR 52.246-2(j). If this sentence is removed [unclear].
+
+Subparagraph C
+Repair, Replace, or Refund - Suppliers may request to add language stating that the decision to repair or replace defective goods or to refund [unclear].
+Having a few extra dollars in Northrop's account will do nothing to fulfill our customer's requirements. Furthermore, language may be added [unclear].
+Return Material Authorization (RMA) - Supplier may want to include language stating a RMA process for NG to return items requiring warranty [unclear].
+Transportation Costs - As stated in the Defective Work clause, Supplier must pay for any transportation costs. This follows FAR 52.246-2(g).
+Corrected/Reformed Work - Further explains that "any corrected, replaced, or repaired Product(s) or re-performed Service(s) shall be subject [unclear]"
+Overriding Agreements or Enterprise Agreements - A carve out may be necessary such that the warranty can be negotiated as needed for particular [unclear].
+Warranty Disclaimers
+Suppliers may also wish to limit NG's warranties and remedies found under the applicable state's governing laws. An example of proposed language:
+"THIS WARRANTY IS IN LIEU OF ALL OTHER WARRANTIES WHETHER WRITTEN ORAL, EXPRESS OR IMPLIED (INCLUDING WITHOUT LIMITING THE GENERALITY OF THE [unclear])"
+In this instance the first sentence is acceptable; however, there is rationale for deleting the highlighted second sentence from the Warranty.
+The language "THE FOREGOING CONSTITUTES BUYER'S SOLE REMEDY AND SELLER'S SOLE LIABILITY FOR BREACH OF WARRANTY" limits NG from seeking any other [unclear].
+Although the warranty remedies may be acceptable to NG, there is one more issue to consider. The agreement was to include the following language [unclear].
+When making a business decision on whether to agree to "THE FOREGOING CONSTITUTES BUYER'S SOLE REMEDY AND SELLER'S SOLE LIABILITY FOR BREACH OF WARRANTY" [unclear].
+
+Suggested Responses
+
+Subparagraph A
+Issue: Modifying or Removing the Warranty Clause.
+Response: Sellers/Suppliers may propose weaker warranty language that offers fewer remedies and might remove legal protections. Ensure any changes [unclear].
+
+Subparagraph B
+Issue: Establishing Warranty Period.
+Response: Warranty periods and issues would generally arise after the Product/Services acceptance, not from shipment or delivery. Coordinate and [unclear].
+
+Subparagraph C
+Issue: Maintaining Additional Remedies.
+Response: Keep the sentence starting with "These warranties shall not..." unchanged to preserve additional [unclear].
+
+[Some lines between the two photos are cut off / not visible.]
+
+[Additional Resources - partially visible]
+Quality (Program Level - Not QM&C or Regulatory Compliance)
+Supplier Quality
+Quality and Mission Assurance
+Program Quality Rep
+Quality (Program level - This is NOT QM&C or Regulatory Compliance)
+AS -
+Supplier Quality - Home (myngc.com)
+QS -
+Quality and Mission Assurance - Home
+MS - Program Quality Rep (MS Quality and Mission Assurance Organization -> Division Quality and Mission Assurance [truncated])
+AP - Assigned Program Quality Representative
+NGAS: After utilizing this page, if further negotiations or more information is required, route supplier excep[tion - truncated]
+Enterprise GSC Non-Standard Terms and Agreements Review Tool
+
+Intent
+A warranty is a promise by the Supplier to meet certain conditions. A warranty provides Northrop Grumman (NG) [truncated].
+
+Subparagraph A
+Meet Order Requirements - NG insists that the Supplier deliver the Product or perform the Service consistent with [unclear].
+Unencumbered Ownership - Supplier ensures that there will be no claims or liens held by third parties (such as [unclear]).
+Defect Free - Supplier agrees there will be no defects in the Product or in the performance of the Service.
+Warranty Period - NG does not place a time limit on, or expiration date for, the warranty obligation since a [unclear].
+Material and Workmanship - The phrase "good material and workmanship" is in addition to the specifications and [unclear].
+material
+or workmanship or are otherwise not in conformity with contract requirements.
+Uniform Commercial Code (UCC) - Although NG obtains an express warranty through its standard T&C's, NG also has [unclear]:
+1. Warranty of Merchantability: Supplier represents that the Product being sold meets certain standards or [unclear].
+2. Warranty of Fitness for a Particular Purpose: Supplier represents that the Product being sold meets a special [unclear].
+3. Warranty against Infringement: Supplier represents that the Product being sold does not violate any patent, [unclear].
+4. Warranty of Title: Supplier represents that the Product being sold is owned by the Supplier, that the Supplier [unclear].
+If the Supplier's written exception is to disclaim all or some of the four warranties, the Supplier should provide [unclear].
+
+Subparagraph B
+Continuance of Coverage - The described actions (i.e., successfully passing inspections, Acceptance of the Product [unclear]).
+Factors - Factors (i.e., Product vs. Service; Product shelf life; Product manufacturing or integration schedule, etc. [unclear]).
+Clause 9 Impacts - Be aware of any exceptions to Clause 9 - Defective Work as they may be affected by changes to the [unclear].
+
+Subparagraph C
+Remedies for Warranty Claim - The first sentence states that the Buyer has the sole discretion to return Product(s) [unclear].
+Untimely Repairs - If repair, replacement, or re-performance is not timely, then NG has the right to return, repair, [unclear].
+Set-Off - The last sentence reflects FAR 52.246-2(l)(2). Any monetary consideration could be managed as a set off [unclear].
+
+References
+Uniform Commercial Code, Article 2
+: Relevant sections of state UCC laws.
+GSC Speaker Series
+: NG Warranty Clause Overview Tips and Negotiation Insight (09212022).
+Back to HomePage

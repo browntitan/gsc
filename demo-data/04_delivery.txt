@@ -1,0 +1,52 @@
+4. Delivery
+
+Demo note: Synthetic demo clause content created for retrieval testing. It is fictional and not authoritative internal policy text.
+
+Table of Contents
+Applicable For
+Intent
+References
+Common Exceptions / Suggested Responses
+Additional Resources
+
+Applicable
+For
+CTM-P-ST-001
+CTM-P-ST-004
+CTM-P-ST-005
+
+Intent
+Clause 4 establishes firm delivery obligations, packaging and shipping expectations, notification rules for delays, and the remedies available when the supplier misses required dates. Northrop Grumman relies on this clause to protect program schedules, preserve the right to reject unauthorized early or partial shipments, and recover reasonable expediting or reprocurement costs caused by late delivery.
+
+Common Exceptions / Suggested Responses
+
+Subparagraph A
+Best-efforts delivery commitments. Suppliers may replace firm dates with forecasted, estimated, or commercially reasonable delivery windows. That weakens schedule accountability and makes it harder to manage critical-path commitments.
+
+Subparagraph B
+Unauthorized early, partial, or substitute shipments. Supplier forms sometimes permit partial shipments, early deliveries, or alternate routings without prior approval. That can create receiving issues, storage costs, customs complications, or mismatches with customer integration plans.
+
+Subparagraph C
+Limited remedies for late delivery. A supplier may try to exclude expediting, cover, or backcharge remedies and offer schedule relief with minimal notice. This shifts the impact of late performance back onto Northrop Grumman and the end customer.
+
+Suggested Responses
+
+Subparagraph A
+Issue: Supplier proposes that delivery dates are estimates only and subject to material availability.
+Response: Preserve firm delivery dates and require immediate written notice of any anticipated delay, including cause, affected line items, and mitigation steps. If flexibility is necessary, document it in a narrow approved schedule variance rather than in the base clause.
+
+Subparagraph B
+Issue: Supplier wants the right to make partial shipments or ship early without approval.
+Response: Require written authorization for early, split, or substitute shipments. Keep packaging, labeling, and routing instructions in the order so receiving, export, and customer-delivery controls remain intact.
+
+Subparagraph C
+Issue: Supplier deletes language allowing recovery of expediting or reprocurement costs tied to late delivery.
+Response: Restore the buyer's remedies for reasonable cover, premium freight, and schedule recovery costs caused by supplier delay. If any remedy limitation is considered, escalate it because late delivery risk often affects customer milestones directly.
+
+Additional Resources
+Coordinate delivery deviations with program operations, material planning, logistics, and export/compliance teams before accepting revised shipment language. Document any approved split-shipment or early-delivery arrangement in the purchase order file so receiving and invoicing teams can process it consistently.
+
+References
+Consult internal shipping instructions, premium-freight approval guidance, and schedule-recovery procedures when negotiating this clause. Where the prime contract imposes liquidated damages, milestone commitments, or packaging rules, align the subcontract delivery language accordingly.
+
+Back to HomePage

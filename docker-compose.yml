@@ -1,0 +1,92 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-openwebui}
+      POSTGRES_USER: ${POSTGRES_USER:-openwebui}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-openwebui}
+    ports:
+      - "${POSTGRES_PORT:-55432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./pgvector/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-openwebui} -d ${POSTGRES_DB:-openwebui}"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  pipelines:
+    image: ${PIPELINES_IMAGE:-ghcr.io/open-webui/pipelines:main}
+    restart: unless-stopped
+    environment:
+      PIPELINES_API_KEY: ${PIPELINES_API_KEY:-0p3n-w3bu!}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-openwebui}:${POSTGRES_PASSWORD:-openwebui}@postgres:5432/${POSTGRES_DB:-openwebui}
+      CHUNK_TABLE_NAME: ${CHUNK_TABLE_NAME:-supply_chain_chunks}
+      DEFAULT_COLLECTION_NAME: ${DEFAULT_COLLECTION_NAME:-GSC-Internal-Policy}
+      TOP_K: ${TOP_K:-6}
+      REQUEST_TIMEOUT_SECONDS: ${REQUEST_TIMEOUT_SECONDS:-120}
+      ROUTER_MODE: ${ROUTER_MODE:-extractor_assisted}
+      ENABLE_LLM_EXTRACTOR: ${ENABLE_LLM_EXTRACTOR:-true}
+      ENABLE_LLM_FORMATTER: ${ENABLE_LLM_FORMATTER:-true}
+      EXTRACTOR_TIMEOUT_SECONDS: ${EXTRACTOR_TIMEOUT_SECONDS:-30}
+      ANSWER_PROVIDER: ${ANSWER_PROVIDER:-ollama}
+      ANSWER_MODEL: ${ANSWER_MODEL:-gpt-oss:20b}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-ollama}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-768}
+      EXTRACTOR_PROVIDER: ${EXTRACTOR_PROVIDER:-ollama}
+      EXTRACTOR_MODEL: ${EXTRACTOR_MODEL:-gpt-oss:20b}
+      FORMATTER_PROVIDER: ${FORMATTER_PROVIDER:-ollama}
+      FORMATTER_MODEL: ${FORMATTER_MODEL:-gpt-oss:20b}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-gpt-oss:20b}
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-nomic-embed-text}
+      AZURE_OPENAI_BASE_URL: ${AZURE_OPENAI_BASE_URL:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_OPENAI_CHAT_MODEL: ${AZURE_OPENAI_CHAT_MODEL:-}
+      AZURE_OPENAI_EMBED_MODEL: ${AZURE_OPENAI_EMBED_MODEL:-}
+    ports:
+      - "${PIPELINES_PORT:-9099}:9099"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./pipelines:/app/pipelines
+
+  open-webui:
+    image: ${OPENWEBUI_IMAGE:-ghcr.io/open-webui/open-webui:main}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      pipelines:
+        condition: service_started
+    environment:
+      WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:-replace-me}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-openwebui}:${POSTGRES_PASSWORD:-openwebui}@postgres:5432/${POSTGRES_DB:-openwebui}
+      VECTOR_DB: pgvector
+      PGVECTOR_DB_URL: postgresql://${POSTGRES_USER:-openwebui}:${POSTGRES_PASSWORD:-openwebui}@postgres:5432/${POSTGRES_DB:-openwebui}
+      PGVECTOR_CREATE_EXTENSION: "false"
+      ENABLE_OLLAMA_API: "true"
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      ENABLE_OPENAI_API: "true"
+      OPENAI_API_BASE_URLS: ${OPENAI_API_BASE_URLS:-http://pipelines:9099}
+      OPENAI_API_KEYS: ${OPENAI_API_KEYS:-0p3n-w3bu!}
+      UVICORN_WORKERS: "1"
+    ports:
+      - "${OPENWEBUI_PORT:-3001}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import json, urllib.request; data = json.load(urllib.request.urlopen('http://localhost:8080/health')); raise SystemExit(0 if data.get('status') else 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - open-webui-data:/app/backend/data
+
+volumes:
+  postgres-data:
+  open-webui-data:

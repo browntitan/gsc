@@ -1,0 +1,35 @@
+T&C 12 - Supply Chain Terms
+
+Clause 4 - Confidentiality
+For T&C 12 Clause 4, confidentiality obligations should meet the minimum company standard for protected information, permitted disclosures, and survival period. Any survival shorter than two years requires approval.
+
+Confidentiality must meet the company minimum standard. Shortened survival periods need approval.
+
+Clause 5 - Indemnification
+For T&C 12 Clause 5, indemnification carve-outs must remain within the approved template. Any expansion to indirect, consequential, third-party regulatory, or open-ended affiliate claims requires legal review and deviation approval.
+
+Keep indemnification carve-outs within the approved template. Escalate broadened carve-outs to legal and deviation review.
+
+If the supplier asks for reciprocal indemnity language under T&C 12 Clause 5, the reviewer should compare it to the standard fallback. Reciprocal language that shifts product, IP, or regulatory exposure back to the company must be redlined or escalated.
+
+Do not accept reciprocal indemnity that moves product, IP, or regulatory risk to the company without escalation.
+
+T&C 19 - Commercial Terms
+
+Clause 7 - Termination
+For T&C 19 Clause 7, termination language should preserve termination for cause, define a reasonable cure period, and avoid supplier-only convenience termination unless specifically approved by procurement leadership.
+
+Preserve termination for cause, ensure cure rights, and avoid one-sided supplier convenience termination.
+
+When reviewing T&C 19 Clause 7, notice and cure periods should be commercially reasonable. Cure periods longer than thirty days for operational breach should be escalated if they delay mitigation or replacement planning.
+
+Escalate cure periods above thirty days where they create operational exposure.
+
+Clause 8 - Limitation of Liability
+For T&C 19 Clause 8, liability caps should align to the approved cap framework. Reviewers should look for uncapped claims, super caps, and carve-outs that effectively nullify the negotiated cap.
+
+Compare the clause to the approved liability-cap framework and escalate super caps or overly broad carve-outs.
+
+In T&C 19 Clause 8, indirect and consequential damages should normally remain excluded on a mutual basis. Supplier edits that restore these damages for broad categories of claims should be treated as a material deviation.
+
+Mutual indirect-damages exclusions are preferred. Broad restoration of indirect damages is a material deviation.

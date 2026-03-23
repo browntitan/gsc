@@ -1,0 +1,52 @@
+8. Excusable Delay
+
+Demo note: Synthetic demo clause content created for retrieval testing. It is fictional and not authoritative internal policy text.
+
+Table of Contents
+Applicable For
+Intent
+References
+Common Exceptions / Suggested Responses
+Additional Resources
+
+Applicable
+For
+CTM-P-ST-002
+CTM-P-ST-004
+CTM-P-ST-006
+
+Intent
+Clause 8 addresses circumstances where performance delays may be excused because they were caused by events beyond the supplier's reasonable control and without its fault or negligence. Northrop Grumman uses this clause to require prompt notice, documented mitigation, and a clear link between the event and the actual delivery impact while preventing automatic entitlement to additional compensation.
+
+Common Exceptions / Suggested Responses
+
+Subparagraph A
+Overly broad force majeure definitions. Suppliers may include labor shortages, internal capacity constraints, subcontractor default, or market price changes as excusable-delay events even when those risks are within the supplier's control or should have been managed through ordinary planning.
+
+Subparagraph B
+Automatic entitlement to cost recovery. A supplier may treat every excusable delay as grounds for equitable adjustment, storage recovery, or idle labor reimbursement. That converts schedule relief into an open-ended compensation mechanism.
+
+Subparagraph C
+No mitigation or alternate-source obligation. Supplier language sometimes excuses delay without requiring the supplier to use substitute materials, alternate transportation, overtime, or recovery planning to minimize the impact.
+
+Suggested Responses
+
+Subparagraph A
+Issue: Supplier expands force majeure to include supplier labor availability, raw material shortages, and normal transportation disruptions.
+Response: Limit excusable events to circumstances beyond the supplier's reasonable control and not caused by poor planning, sourcing, or ordinary commercial risk. Keep subcontractor and labor issues excusable only where the underlying cause independently satisfies the standard.
+
+Subparagraph B
+Issue: Supplier requests additional compensation whenever an excusable delay occurs.
+Response: Preserve schedule relief where justified, but do not grant automatic money. Additional compensation should require a separate written agreement or a distinct contractual basis beyond the delay clause itself.
+
+Subparagraph C
+Issue: Supplier deletes mitigation language and removes any obligation to use alternate transportation or substitute sources.
+Response: Restore the duty to notify promptly, mitigate actively, and provide a recovery plan showing how the supplier will reduce the effect of the delay. Excusability should not apply to impacts the supplier could have avoided reasonably.
+
+Additional Resources
+Coordinate force-majeure edits with procurement, supply assurance, logistics, and program scheduling teams. If customer milestones are at risk, capture the escalation path and required notice timing in the sourcing file before accepting revised delay language.
+
+References
+Use the internal force-majeure guidance, supplier recovery planning checklist, and notice template when reviewing this clause. Compare negotiated language against any prime contract schedule-relief rules or customer-directed notification periods that flow to the subcontractor.
+
+Back to HomePage

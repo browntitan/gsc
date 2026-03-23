@@ -1,0 +1,149 @@
+[
+  {
+    "clause_number": 1,
+    "title": "Definitions",
+    "filename": "clauses/01_definitions.txt",
+    "applicable_for": [
+      "CTM-P-ST-001",
+      "CTM-P-ST-002",
+      "CTM-P-ST-004",
+      "CTM-P-ST-006"
+    ],
+    "source_status": "synthetic demo"
+  },
+  {
+    "clause_number": 2,
+    "title": "Limited Liability",
+    "filename": "clauses/02_limited_liability.txt",
+    "applicable_for": [
+      "CTM-P-ST-001",
+      "CTM-P-ST-003",
+      "CTM-P-ST-005",
+      "CTM-P-ST-007"
+    ],
+    "source_status": "synthetic demo"
+  },
+  {
+    "clause_number": 3,
+    "title": "Changes",
+    "filename": "clauses/03_changes.txt",
+    "applicable_for": [
+      "CTM-P-ST-002",
+      "CTM-P-ST-003",
+      "CTM-P-ST-004",
+      "CTM-P-ST-006",
+      "CTM-P-ST-007"
+    ],
+    "source_status": "synthetic demo"
+  },
+  {
+    "clause_number": 4,
+    "title": "Delivery",
+    "filename": "clauses/04_delivery.txt",
+    "applicable_for": [
+      "CTM-P-ST-001",
+      "CTM-P-ST-004",
+      "CTM-P-ST-005"
+    ],
+    "source_status": "synthetic demo"
+  },
+  {
+    "clause_number": 5,
+    "title": "Inspection and Acceptance",
+    "filename": "clauses/05_inspection_and_acceptance.txt",
+    "applicable_for": [
+      "CTM-P-ST-001",
+      "CTM-P-ST-002",
+      "CTM-P-ST-003",
+      "CTM-P-ST-006"
+    ],
+    "source_status": "synthetic demo"
+  },
+  {
+    "clause_number": 6,
+    "title": "Stop Work",
+    "filename": "clauses/06_stop_work.txt",
+    "applicable_for": [
+      "CTM-P-ST-002",
+      "CTM-P-ST-005",
+      "CTM-P-ST-006",
+      "CTM-P-ST-007"
+    ],
+    "source_status": "synthetic demo"
+  },
+  {
+    "clause_number": 7,
+    "title": "Termination",
+    "filename": "clauses/07_termination.txt",
+    "applicable_for": [
+      "CTM-P-ST-001",
+      "CTM-P-ST-003",
+      "CTM-P-ST-004",
+      "CTM-P-ST-005",
+      "CTM-P-ST-007"
+    ],
+    "source_status": "synthetic demo"
+  },
+  {
+    "clause_number": 8,
+    "title": "Excusable Delay",
+    "filename": "clauses/08_excusable_delay.txt",
+    "applicable_for": [
+      "CTM-P-ST-002",
+      "CTM-P-ST-004",
+      "CTM-P-ST-006"
+    ],
+    "source_status": "synthetic demo"
+  },
+  {
+    "clause_number": 9,
+    "title": "Defective Work",
+    "filename": "clauses/09_defective_work.txt",
+    "applicable_for": [
+      "CTM-P-ST-001",
+      "CTM-P-ST-002",
+      "CTM-P-ST-005",
+      "CTM-P-ST-006",
+      "CTM-P-ST-007"
+    ],
+    "source_status": "synthetic demo"
+  },
+  {
+    "clause_number": 10,
+    "title": "Indemnification",
+    "filename": "clauses/10_indemnification.txt",
+    "applicable_for": [
+      "CTM-P-ST-003",
+      "CTM-P-ST-004",
+      "CTM-P-ST-005",
+      "CTM-P-ST-007"
+    ],
+    "source_status": "synthetic demo"
+  },
+  {
+    "clause_number": 11,
+    "title": "Insurance",
+    "filename": "clauses/11_insurance.txt",
+    "applicable_for": [
+      "CTM-P-ST-001",
+      "CTM-P-ST-004",
+      "CTM-P-ST-006",
+      "CTM-P-ST-007"
+    ],
+    "source_status": "synthetic demo"
+  },
+  {
+    "clause_number": 12,
+    "title": "Warranty",
+    "filename": "clauses/12_warranty.txt",
+    "applicable_for": [
+      "CTM-P-ST-001",
+      "CTM-P-ST-002",
+      "CTM-P-ST-003",
+      "CTM-P-ST-005",
+      "CTM-P-ST-006",
+      "CTM-P-ST-007"
+    ],
+    "source_status": "provided transcription"
+  }
+]

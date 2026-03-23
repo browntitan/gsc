@@ -1,0 +1,53 @@
+2. Limited Liability
+
+Demo note: Synthetic demo clause content created for retrieval testing. It is fictional and not authoritative internal policy text.
+
+Table of Contents
+Applicable For
+Intent
+References
+Common Exceptions / Suggested Responses
+Additional Resources
+
+Applicable
+For
+CTM-P-ST-001
+CTM-P-ST-003
+CTM-P-ST-005
+CTM-P-ST-007
+
+Intent
+Clause 2 allocates commercial risk without eliminating core supplier accountability for breach, bodily injury, property damage, intellectual property infringement, confidentiality failures, fraud, or gross negligence. Northrop Grumman uses this clause to prevent liability caps from stripping away the remedies needed to protect customer commitments and recover losses caused by supplier misconduct or nonconforming performance.
+
+Common Exceptions / Suggested Responses
+
+Subparagraph A
+Blanket caps on all damages. Suppliers frequently propose a single aggregate cap that applies to every claim, including indemnity, confidentiality breaches, reprocurement, and damage to government or customer property. That approach can leave Northrop Grumman without an effective remedy for the highest-risk failures.
+
+Subparagraph B
+Overly broad exclusions of consequential or special damages. A supplier may try to exclude all indirect, incidental, consequential, exemplary, or punitive damages even where those categories capture reprocurement costs, customer backcharges, recall expense, or costs to investigate and contain a breach. Review the carve-outs carefully so mission-impacting costs are not waived inadvertently.
+
+Subparagraph C
+Caps tied only to fees paid on a narrow line item. Some supplier forms limit exposure to amounts paid for the specific affected deliverable rather than the full purchase order or the reasonably foreseeable harm caused by the breach. That formulation is usually too narrow for integrated hardware, software, or services programs.
+
+Suggested Responses
+
+Subparagraph A
+Issue: Supplier proposes a liability cap equal to the total fees paid and applies it to indemnity, confidentiality, and property damage claims.
+Response: Preserve carve-outs for indemnity, intellectual property infringement, confidentiality and data security breaches, fraud, willful misconduct, gross negligence, bodily injury, and property damage. If a cap is accepted for ordinary breach, tie it to meaningful program value rather than the smallest affected line item.
+
+Subparagraph B
+Issue: Supplier seeks to exclude all consequential damages, including customer backcharges and reprocurement costs.
+Response: Narrow the exclusion so it does not waive direct recovery of cover, reprocurement, recall, field correction, investigation, and customer pass-through costs arising from supplier nonperformance. Keep remedies aligned with the program's actual risk profile.
+
+Subparagraph C
+Issue: Supplier limits liability to amounts paid for the specific defective unit or service milestone.
+Response: Reject unit-level caps for integrated programs. If negotiation requires a cap, use a broader cap base and preserve separate uncapped exposure for high-risk categories that could materially affect the end customer or regulatory compliance.
+
+Additional Resources
+Escalate proposed liability caps and damage exclusions to Supply Chain Legal, risk management, and the program business lead whenever customer pass-through exposure, export controls, cybersecurity, or intellectual property is implicated. Document any negotiated carve-outs in the deal summary so downstream teams understand the approved risk position.
+
+References
+Review internal playbooks on indemnity carve-outs, limitation-of-liability approval thresholds, and recovery of reprocurement or customer backcharge costs. Where government flowdowns apply, compare the proposed limitation language against any mandatory remedies or inspection rights in the flowed clauses.
+
+Back to HomePage

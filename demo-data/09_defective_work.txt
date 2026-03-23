@@ -1,0 +1,54 @@
+9. Defective Work
+
+Demo note: Synthetic demo clause content created for retrieval testing. It is fictional and not authoritative internal policy text.
+
+Table of Contents
+Applicable For
+Intent
+References
+Common Exceptions / Suggested Responses
+Additional Resources
+
+Applicable
+For
+CTM-P-ST-001
+CTM-P-ST-002
+CTM-P-ST-005
+CTM-P-ST-006
+CTM-P-ST-007
+
+Intent
+Clause 9 requires the supplier to correct, repair, replace, or reperform defective work at its own expense and within a commercially reasonable period. Northrop Grumman uses this clause to preserve remedies when nonconforming work affects production, fielded systems, or customer deliverables, and to ensure defect correction includes associated costs such as removal, reinstallation, retesting, and management of downstream impacts.
+
+Common Exceptions / Suggested Responses
+
+Subparagraph A
+Supplier-exclusive remedy language. Suppliers may attempt to limit the buyer's remedy to repair at the supplier's convenience, even if replacement or reperformance would better protect program schedules. This can delay recovery and shift operational risk to Northrop Grumman.
+
+Subparagraph B
+Buyer-funded removal and reinstallation. Some supplier forms require the buyer to bear labor, access, retest, freight, or field-service costs associated with correcting defective work. Those costs should normally remain with the supplier when the defect is attributable to supplier performance.
+
+Subparagraph C
+Waiver of latent defects after acceptance. Supplier edits may state that acceptance, use, or payment bars later defective-work claims. That is problematic for quality escapes that surface during integration, environmental testing, or customer operation.
+
+Suggested Responses
+
+Subparagraph A
+Issue: Supplier states that its sole obligation is to attempt repair, even if replacement or reperformance is needed to meet the program schedule.
+Response: Keep the buyer's option to require repair, replacement, reperformance, or other appropriate corrective action based on schedule and mission impact. The remedy should be driven by what restores conforming performance most effectively.
+
+Subparagraph B
+Issue: Supplier excludes removal, reinstallation, retesting, and field labor from its defective-work responsibility.
+Response: Restore supplier responsibility for reasonable costs directly caused by its defect, including removal, shipping, reinstallation, retesting, and related corrective-action support. Escalate any attempted cost-shifting where fielded hardware or customer systems are affected.
+
+Subparagraph C
+Issue: Supplier wants acceptance and payment to waive all later claims for nonconforming work.
+Response: Preserve the buyer's rights for latent defects, fraud, gross mistakes amounting to fraud, and defects discovered during downstream testing or customer use. Acceptance should not bar legitimate defective-work remedies.
+
+Additional Resources
+Coordinate defective-work negotiations with Supplier Quality, program engineering, field service, and procurement. For safety-critical or mission-critical items, capture any approved limitation in the risk register and confirm that corrective-action timing aligns with customer restoration requirements.
+
+References
+Use the internal nonconformance management process, supplier corrective-action procedures, and rework/replacement recovery guide when evaluating this clause. Compare proposed edits against any flowed warranty, inspection, or product-support obligations in the prime contract.
+
+Back to HomePage

@@ -1,0 +1,53 @@
+11. Insurance
+
+Demo note: Synthetic demo clause content created for retrieval testing. It is fictional and not authoritative internal policy text.
+
+Table of Contents
+Applicable For
+Intent
+References
+Common Exceptions / Suggested Responses
+Additional Resources
+
+Applicable
+For
+CTM-P-ST-001
+CTM-P-ST-004
+CTM-P-ST-006
+CTM-P-ST-007
+
+Intent
+Clause 11 requires the supplier to maintain insurance coverage appropriate for the products and services being provided and to furnish evidence of that coverage on request. Northrop Grumman uses this clause to verify that the supplier has financial backing for bodily injury, property damage, professional liability, cyber risk, automobile exposure, and workers' compensation obligations that may arise during performance.
+
+Common Exceptions / Suggested Responses
+
+Subparagraph A
+Unverified self-insurance or affiliate coverage. Suppliers may claim they are self-insured or rely on a parent company's blanket program without providing meaningful evidence of coverage, limits, or claims-paying ability. That can leave the buyer without practical recourse if a covered event occurs.
+
+Subparagraph B
+Reduced limits or missing specialty coverage. Supplier forms may cut commercial general liability limits, omit professional liability or cyber coverage, or exclude foreign, aviation, or product-specific risk that is relevant to the work. Low or incomplete coverage can be inconsistent with the program's exposure profile.
+
+Subparagraph C
+Removal of additional insured, waiver of subrogation, or notice protections. A supplier may resist naming Northrop Grumman as an additional insured where appropriate, refuse to provide waiver of subrogation language, or delete notice requirements for cancellation or material change. Those edits can reduce the clause's practical value.
+
+Suggested Responses
+
+Subparagraph A
+Issue: Supplier states that corporate self-insurance satisfies the clause but will not provide supporting documentation.
+Response: Require commercially reasonable evidence of the self-insurance program or alternate coverage, including responsible entity, retained limits, and claims contact information. If adequate support is not available, insist on conventional insurance placement or escalate for risk approval.
+
+Subparagraph B
+Issue: Supplier reduces liability limits and removes cyber or professional liability coverage even though the work includes software, design, or network access.
+Response: Match the required insurance types and limits to the actual risk of the work. Keep cyber, technology errors and omissions, aviation, marine, or other specialty coverage where the performance profile warrants it.
+
+Subparagraph C
+Issue: Supplier deletes additional insured status and notice of cancellation language.
+Response: Preserve additional insured and waiver-of-subrogation protections where appropriate, and require prompt notice of cancellation, nonrenewal, or material reduction in coverage. These protections are often important when the buyer faces direct third-party exposure.
+
+Additional Resources
+Coordinate insurance edits with risk management, procurement, and legal, especially for software, field service, international performance, or hazardous work scopes. Where customer flowdowns specify minimum insurance terms, confirm the supplier's certificate package and endorsements satisfy those downstream requirements before award.
+
+References
+Use the internal insurance matrix, certificate review checklist, and high-risk work approval guide when reviewing changes to this clause. Compare requested limits and endorsements against the scope of work, site-access requirements, and any customer-mandated insurance provisions.
+
+Back to HomePage
