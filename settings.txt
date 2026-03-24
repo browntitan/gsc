@@ -60,3 +60,9 @@ $RG="funciton-app-shiv-gsc-test_group"
 $SUB="ES-US-T-CDOOAIPOC-SUB-01"
 
 az functionapp function list --name "$APP" --resource-group "$RG" --subscription "$SUB"
+
+az functionapp function keys list \
+  --name "<EXACT_FUNCTION_APP_NAME>" \
+  --resource-group "<EXACT_RESOURCE_GROUP_NAME>" \
+  --subscription "ES-US-T-CDOOAIPOC-SUB-01" \
+  --function-name backfill_existing_gsc
