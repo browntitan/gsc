@@ -40,3 +40,7 @@ az functionapp config access-restriction show \
   --subscription "ES-US-T-CDOOAIPOC-SUB-01" \
   --query "[?name=='function-app-shiv-gsc-test'].{name:name,resourceGroup:resourceGroup,host:defaultHostName,state:state}" \
   -o table
+
+az group show \
+  --name "function-app-shiv-gsc-test_group" \
+  --subscription "ES-US-T-CDOOAIPOC-SUB-01"
