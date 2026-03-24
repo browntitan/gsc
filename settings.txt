@@ -44,3 +44,12 @@ az functionapp config access-restriction show \
 az group show \
   --name "function-app-shiv-gsc-test_group" \
   --subscription "ES-US-T-CDOOAIPOC-SUB-01"
+
+APP="shiv_funciton_app_test"
+RG="funciton-app-shiv-gsc-test_group"
+SUB="ES-US-T-CDOOAIPOC-SUB-01"
+
+az functionapp list \
+  --subscription "ES-US-T-CDOOAIPOC-SUB-01" \
+  --query "[].{name:name,resourceGroup:resourceGroup,host:defaultHostName,state:state}" \
+  -o table
