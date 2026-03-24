@@ -24,7 +24,7 @@ REQUIRED_ENV_VARS = (
 
 
 class BlobSourceNotFoundError(FileNotFoundError):
-    """Raised when the source blob does not exist in the source container."""
+    """Raised when a required blob does not exist."""
 
 
 def json_response(payload: Dict[str, Any], status_code: int = 200) -> func.HttpResponse:
@@ -104,9 +104,16 @@ def require_non_empty_string(value: Any, name: str) -> str:
     return cleaned
 
 
+def require_blob_suffix(blob_name: str, suffix: str, container_name: str) -> str:
+    if not blob_name.lower().endswith(suffix.lower()):
+        raise ValueError(
+            f"The 'blob' value must point to a '{suffix}' blob in the '{container_name}' container."
+        )
+    return blob_name
+
+
 def cleaned_blob_name(source_blob_name: str) -> str:
-    if not source_blob_name.lower().endswith(".aspx"):
-        raise ValueError("Blob name must end with '.aspx'.")
+    require_blob_suffix(source_blob_name, ".aspx", SOURCE_CONTAINER)
     return re.sub(r"\.aspx$", ".txt", source_blob_name, flags=re.IGNORECASE)
 
 
@@ -135,70 +142,6 @@ def load_database_health_check() -> Any:
     return check_database_connection
 
 
-def process_single_blob(
-    service: BlobServiceClient,
-    blob_name: str,
-    embed_requested: bool,
-) -> Dict[str, Any]:
-    output_name = cleaned_blob_name(blob_name)
-
-    logging.info(
-        "Starting GSC blob processing: source_container=%s blob=%s embed=%s",
-        SOURCE_CONTAINER,
-        blob_name,
-        embed_requested,
-    )
-
-    try:
-        blob_client = service.get_blob_client(container=SOURCE_CONTAINER, blob=blob_name)
-        raw_bytes = blob_client.download_blob().readall()
-    except ResourceNotFoundError as exc:
-        raise BlobSourceNotFoundError(
-            f"Blob not found in container '{SOURCE_CONTAINER}': {blob_name}"
-        ) from exc
-
-    raw_text = raw_bytes.decode("utf-8", errors="ignore")
-    cleaned_text = load_cleaner()(raw_text)
-
-    output_client = service.get_blob_client(container=CLEANED_CONTAINER, blob=output_name)
-    output_client.upload_blob(cleaned_text.encode("utf-8"), overwrite=True)
-    logging.info(
-        "Wrote cleaned output: output_container=%s blob=%s chars=%s",
-        CLEANED_CONTAINER,
-        output_name,
-        len(cleaned_text),
-    )
-
-    embedding_report = None
-    embed_executed = False
-
-    if embed_requested:
-        embed_executed = True
-        logging.info("Starting embedding for cleaned output: blob=%s", output_name)
-        embedding_report = load_ingest_function()(source_name=output_name, raw_text=cleaned_text)
-        logging.info(
-            "Completed embedding for cleaned output: blob=%s rows_written=%s skipped_count=%s",
-            output_name,
-            embedding_report.get("rows_written"),
-            embedding_report.get("skipped_count"),
-        )
-        if embedding_report.get("skipped_count"):
-            logging.warning("Embedding skip report for %s: %s", output_name, json.dumps(embedding_report))
-
-    return {
-        "status": "processed",
-        "source_container": SOURCE_CONTAINER,
-        "source_blob_name": blob_name,
-        "output_container": CLEANED_CONTAINER,
-        "cleaned_output_blob_name": output_name,
-        "cleaned_characters": len(cleaned_text),
-        "embed_requested": embed_requested,
-        "embed_executed": embed_executed,
-        "embedding_report": embedding_report,
-        "skip_info": embedding_report.get("skipped", []) if embedding_report else [],
-    }
-
-
 def error_payload(
     *,
     message: str,
@@ -220,6 +163,277 @@ def error_payload(
     return payload
 
 
+def parse_blob_request(
+    req: func.HttpRequest,
+    *,
+    expected_suffix: str,
+    container_name: str,
+) -> Tuple[Optional[str], Optional[func.HttpResponse]]:
+    body, body_error = parse_request_json(req)
+    if body_error:
+        return None, json_response(
+            error_payload(message=body_error, error_type="InvalidJson"),
+            status_code=400,
+        )
+
+    assert body is not None
+
+    try:
+        blob_name = require_non_empty_string(get_request_value(req, body, "blob"), "blob")
+        require_blob_suffix(blob_name, expected_suffix, container_name)
+    except ValueError as exc:
+        return None, json_response(
+            error_payload(message=str(exc), error_type="InvalidRequest"),
+            status_code=400,
+        )
+
+    return blob_name, None
+
+
+def parse_batch_request(
+    req: func.HttpRequest,
+    *,
+    default_limit: int = 5,
+) -> Tuple[Optional[Dict[str, Any]], Optional[func.HttpResponse]]:
+    body, body_error = parse_request_json(req)
+    if body_error:
+        return None, json_response(
+            error_payload(message=body_error, error_type="InvalidJson"),
+            status_code=400,
+        )
+
+    assert body is not None
+
+    try:
+        limit = parse_limit(get_request_value(req, body, "limit"), default=default_limit)
+        prefix = get_request_value(req, body, "prefix", "") or ""
+        if not isinstance(prefix, str):
+            raise ValueError("The 'prefix' value must be a string.")
+        embed_requested = parse_boolean(get_request_value(req, body, "embed"), "embed", default=True)
+    except ValueError as exc:
+        return None, json_response(
+            error_payload(message=str(exc), error_type="InvalidRequest"),
+            status_code=400,
+        )
+
+    return {
+        "limit": limit,
+        "prefix": prefix,
+        "embed_requested": embed_requested,
+    }, None
+
+
+def download_blob_text(service: BlobServiceClient, container_name: str, blob_name: str) -> str:
+    try:
+        blob_client = service.get_blob_client(container=container_name, blob=blob_name)
+        raw_bytes = blob_client.download_blob().readall()
+    except ResourceNotFoundError as exc:
+        raise BlobSourceNotFoundError(
+            f"Blob not found in container '{container_name}': {blob_name}"
+        ) from exc
+
+    return raw_bytes.decode("utf-8", errors="ignore")
+
+
+def upload_blob_text(service: BlobServiceClient, container_name: str, blob_name: str, text: str) -> None:
+    blob_client = service.get_blob_client(container=container_name, blob=blob_name)
+    blob_client.upload_blob(text.encode("utf-8"), overwrite=True)
+
+
+def clean_source_blob(
+    service: BlobServiceClient,
+    blob_name: str,
+) -> Dict[str, Any]:
+    output_name = cleaned_blob_name(blob_name)
+
+    logging.info(
+        "Starting source clean: source_container=%s blob=%s",
+        SOURCE_CONTAINER,
+        blob_name,
+    )
+
+    raw_text = download_blob_text(service, SOURCE_CONTAINER, blob_name)
+    cleaned_text = load_cleaner()(raw_text)
+    upload_blob_text(service, CLEANED_CONTAINER, output_name, cleaned_text)
+
+    logging.info(
+        "Wrote cleaned output: output_container=%s blob=%s chars=%s",
+        CLEANED_CONTAINER,
+        output_name,
+        len(cleaned_text),
+    )
+
+    return {
+        "status": "cleaned",
+        "source_container": SOURCE_CONTAINER,
+        "source_blob_name": blob_name,
+        "output_container": CLEANED_CONTAINER,
+        "cleaned_output_blob_name": output_name,
+        "cleaned_characters": len(cleaned_text),
+        "cleaned_text": cleaned_text,
+    }
+
+
+def embed_cleaned_blob(
+    service: BlobServiceClient,
+    blob_name: str,
+) -> Dict[str, Any]:
+    require_blob_suffix(blob_name, ".txt", CLEANED_CONTAINER)
+
+    logging.info(
+        "Starting cleaned-text embed: source_container=%s blob=%s",
+        CLEANED_CONTAINER,
+        blob_name,
+    )
+
+    cleaned_text = download_blob_text(service, CLEANED_CONTAINER, blob_name)
+    embedding_report = load_ingest_function()(source_name=blob_name, raw_text=cleaned_text)
+
+    logging.info(
+        "Completed cleaned-text embed: blob=%s rows_written=%s skipped_count=%s",
+        blob_name,
+        embedding_report.get("rows_written"),
+        embedding_report.get("skipped_count"),
+    )
+    if embedding_report.get("skipped_count"):
+        logging.warning("Embedding skip report for %s: %s", blob_name, json.dumps(embedding_report))
+
+    return {
+        "status": "embedded",
+        "source_container": CLEANED_CONTAINER,
+        "source_blob_name": blob_name,
+        "embed_executed": True,
+        "embedding_report": embedding_report,
+        "skip_info": embedding_report.get("skipped", []),
+    }
+
+
+def process_source_blob(
+    service: BlobServiceClient,
+    blob_name: str,
+    embed_requested: bool,
+) -> Dict[str, Any]:
+    clean_result = clean_source_blob(service, blob_name)
+    cleaned_text = clean_result.pop("cleaned_text")
+
+    embedding_report = None
+    embed_executed = False
+    if embed_requested:
+        embed_executed = True
+        logging.info("Starting embedding for cleaned output: blob=%s", clean_result["cleaned_output_blob_name"])
+        embedding_report = load_ingest_function()(
+            source_name=clean_result["cleaned_output_blob_name"],
+            raw_text=cleaned_text,
+        )
+        logging.info(
+            "Completed embedding for cleaned output: blob=%s rows_written=%s skipped_count=%s",
+            clean_result["cleaned_output_blob_name"],
+            embedding_report.get("rows_written"),
+            embedding_report.get("skipped_count"),
+        )
+        if embedding_report.get("skipped_count"):
+            logging.warning(
+                "Embedding skip report for %s: %s",
+                clean_result["cleaned_output_blob_name"],
+                json.dumps(embedding_report),
+            )
+
+    return {
+        **clean_result,
+        "status": "processed",
+        "embed_requested": embed_requested,
+        "embed_executed": embed_executed,
+        "embedding_report": embedding_report,
+        "skip_info": embedding_report.get("skipped", []) if embedding_report else [],
+    }
+
+
+def build_not_found_response(blob_name: str, container_name: str) -> func.HttpResponse:
+    cleaned_output = None
+    if container_name == SOURCE_CONTAINER and blob_name.lower().endswith(".aspx"):
+        cleaned_output = cleaned_blob_name(blob_name)
+
+    return json_response(
+        error_payload(
+            message=f"Blob not found in container '{container_name}': {blob_name}",
+            error_type="BlobNotFound",
+            source_blob_name=blob_name,
+            cleaned_output_blob_name=cleaned_output,
+        ),
+        status_code=404,
+    )
+
+
+def build_failure_response(
+    exc: Exception,
+    *,
+    source_blob_name: Optional[str] = None,
+    cleaned_output_blob_name: Optional[str] = None,
+) -> func.HttpResponse:
+    return json_response(
+        error_payload(
+            message=str(exc),
+            error_type=type(exc).__name__,
+            source_blob_name=source_blob_name,
+            cleaned_output_blob_name=cleaned_output_blob_name,
+        ),
+        status_code=500,
+    )
+
+
+@app.function_name(name="clean_one_gsc_blob")
+@app.route(route="admin/clean-one", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
+def clean_one_gsc_blob(req: func.HttpRequest) -> func.HttpResponse:
+    blob_name, error_response = parse_blob_request(
+        req,
+        expected_suffix=".aspx",
+        container_name=SOURCE_CONTAINER,
+    )
+    if error_response:
+        return error_response
+
+    assert blob_name is not None
+
+    try:
+        result = clean_source_blob(get_blob_service(), blob_name)
+    except BlobSourceNotFoundError:
+        return build_not_found_response(blob_name, SOURCE_CONTAINER)
+    except Exception as exc:  # noqa: BLE001
+        logging.exception("Failed to clean source blob %s", blob_name)
+        return build_failure_response(
+            exc,
+            source_blob_name=blob_name,
+            cleaned_output_blob_name=cleaned_blob_name(blob_name),
+        )
+
+    result.pop("cleaned_text", None)
+    return json_response(result, status_code=200)
+
+
+@app.function_name(name="embed_one_cleaned_blob")
+@app.route(route="admin/embed-one", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
+def embed_one_cleaned_blob(req: func.HttpRequest) -> func.HttpResponse:
+    blob_name, error_response = parse_blob_request(
+        req,
+        expected_suffix=".txt",
+        container_name=CLEANED_CONTAINER,
+    )
+    if error_response:
+        return error_response
+
+    assert blob_name is not None
+
+    try:
+        result = embed_cleaned_blob(get_blob_service(), blob_name)
+    except BlobSourceNotFoundError:
+        return build_not_found_response(blob_name, CLEANED_CONTAINER)
+    except Exception as exc:  # noqa: BLE001
+        logging.exception("Failed to embed cleaned blob %s", blob_name)
+        return build_failure_response(exc, source_blob_name=blob_name)
+
+    return json_response(result, status_code=200)
+
+
 @app.function_name(name="process_one_gsc_blob")
 @app.route(route="admin/process-one", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
 def process_one_gsc_blob(req: func.HttpRequest) -> func.HttpResponse:
@@ -234,6 +448,7 @@ def process_one_gsc_blob(req: func.HttpRequest) -> func.HttpResponse:
 
     try:
         blob_name = require_non_empty_string(get_request_value(req, body, "blob"), "blob")
+        require_blob_suffix(blob_name, ".aspx", SOURCE_CONTAINER)
         embed_requested = parse_boolean(get_request_value(req, body, "embed"), "embed", default=True)
     except ValueError as exc:
         return json_response(
@@ -241,67 +456,29 @@ def process_one_gsc_blob(req: func.HttpRequest) -> func.HttpResponse:
             status_code=400,
         )
 
-    if not blob_name.lower().endswith(".aspx"):
-        return json_response(
-            error_payload(
-                message="The 'blob' value must point to a '.aspx' blob in the 'gsc' container.",
-                error_type="InvalidBlobName",
-                source_blob_name=blob_name,
-            ),
-            status_code=400,
-        )
-
     try:
-        service = get_blob_service()
-        result = process_single_blob(service, blob_name, embed_requested)
-    except BlobSourceNotFoundError as exc:
-        return json_response(
-            error_payload(
-                message=str(exc),
-                error_type="BlobNotFound",
-                source_blob_name=blob_name,
-                cleaned_output_blob_name=cleaned_blob_name(blob_name),
-            ),
-            status_code=404,
-        )
+        result = process_source_blob(get_blob_service(), blob_name, embed_requested)
+    except BlobSourceNotFoundError:
+        return build_not_found_response(blob_name, SOURCE_CONTAINER)
     except Exception as exc:  # noqa: BLE001
         logging.exception("Failed to process blob %s", blob_name)
-        return json_response(
-            error_payload(
-                message=str(exc),
-                error_type=type(exc).__name__,
-                source_blob_name=blob_name,
-                cleaned_output_blob_name=cleaned_blob_name(blob_name),
-            ),
-            status_code=500,
+        return build_failure_response(
+            exc,
+            source_blob_name=blob_name,
+            cleaned_output_blob_name=cleaned_blob_name(blob_name),
         )
 
     return json_response(result, status_code=200)
 
 
-@app.function_name(name="process_gsc_batch")
-@app.route(route="admin/process-batch", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
-def process_gsc_batch(req: func.HttpRequest) -> func.HttpResponse:
-    body, body_error = parse_request_json(req)
-    if body_error:
-        return json_response(
-            error_payload(message=body_error, error_type="InvalidJson"),
-            status_code=400,
-        )
+@app.function_name(name="clean_gsc_batch")
+@app.route(route="admin/clean-batch", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
+def clean_gsc_batch(req: func.HttpRequest) -> func.HttpResponse:
+    options, error_response = parse_batch_request(req, default_limit=5)
+    if error_response:
+        return error_response
 
-    assert body is not None
-
-    try:
-        limit = parse_limit(get_request_value(req, body, "limit"), default=5)
-        prefix = get_request_value(req, body, "prefix", "") or ""
-        if not isinstance(prefix, str):
-            raise ValueError("The 'prefix' value must be a string.")
-        embed_requested = parse_boolean(get_request_value(req, body, "embed"), "embed", default=True)
-    except ValueError as exc:
-        return json_response(
-            error_payload(message=str(exc), error_type="InvalidRequest"),
-            status_code=400,
-        )
+    assert options is not None
 
     processed_items = []
     skipped_items = []
@@ -311,25 +488,163 @@ def process_gsc_batch(req: func.HttpRequest) -> func.HttpResponse:
         service = get_blob_service()
         source_container = service.get_container_client(SOURCE_CONTAINER)
 
-        for blob in source_container.list_blobs(name_starts_with=prefix):
+        for blob in source_container.list_blobs(name_starts_with=options["prefix"]):
             blob_name = blob.name
 
             if not blob_name.lower().endswith(".aspx"):
-                skipped_items.append(
-                    {
-                        "blob": blob_name,
-                        "reason": "Not an .aspx blob",
-                    }
-                )
+                skipped_items.append({"blob": blob_name, "reason": "Not an .aspx blob"})
                 continue
 
-            if len(processed_items) >= limit:
+            if len(processed_items) >= options["limit"]:
                 break
 
             try:
-                processed_items.append(process_single_blob(service, blob_name, embed_requested))
+                item = clean_source_blob(service, blob_name)
+                item.pop("cleaned_text", None)
+                processed_items.append(item)
             except BlobSourceNotFoundError as exc:
-                logging.exception("Source blob disappeared during batch processing: %s", blob_name)
+                logging.exception("Source blob disappeared during clean batch: %s", blob_name)
+                errors.append(
+                    {
+                        "blob": blob_name,
+                        "cleaned_output_blob_name": cleaned_blob_name(blob_name),
+                        "error_type": "BlobNotFound",
+                        "message": str(exc),
+                    }
+                )
+            except Exception as exc:  # noqa: BLE001
+                logging.exception("Failed to clean batch blob %s", blob_name)
+                errors.append(
+                    {
+                        "blob": blob_name,
+                        "cleaned_output_blob_name": cleaned_blob_name(blob_name),
+                        "error_type": type(exc).__name__,
+                        "message": str(exc),
+                    }
+                )
+    except Exception as exc:  # noqa: BLE001
+        logging.exception("Failed to initialize clean batch processing")
+        return build_failure_response(exc)
+
+    return json_response(
+        {
+            "status": "completed",
+            "stage": "clean",
+            "source_container": SOURCE_CONTAINER,
+            "output_container": CLEANED_CONTAINER,
+            "prefix": options["prefix"],
+            "limit": options["limit"],
+            "processed_count": len(processed_items),
+            "skipped_count": len(skipped_items),
+            "error_count": len(errors),
+            "processed_items": processed_items,
+            "skipped_items": skipped_items,
+            "errors": errors,
+        },
+        status_code=200,
+    )
+
+
+@app.function_name(name="embed_cleaned_batch")
+@app.route(route="admin/embed-batch", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
+def embed_cleaned_batch(req: func.HttpRequest) -> func.HttpResponse:
+    options, error_response = parse_batch_request(req, default_limit=5)
+    if error_response:
+        return error_response
+
+    assert options is not None
+
+    processed_items = []
+    skipped_items = []
+    errors = []
+
+    try:
+        service = get_blob_service()
+        cleaned_container = service.get_container_client(CLEANED_CONTAINER)
+
+        for blob in cleaned_container.list_blobs(name_starts_with=options["prefix"]):
+            blob_name = blob.name
+
+            if not blob_name.lower().endswith(".txt"):
+                skipped_items.append({"blob": blob_name, "reason": "Not a .txt blob"})
+                continue
+
+            if len(processed_items) >= options["limit"]:
+                break
+
+            try:
+                processed_items.append(embed_cleaned_blob(service, blob_name))
+            except BlobSourceNotFoundError as exc:
+                logging.exception("Cleaned blob disappeared during embed batch: %s", blob_name)
+                errors.append(
+                    {
+                        "blob": blob_name,
+                        "error_type": "BlobNotFound",
+                        "message": str(exc),
+                    }
+                )
+            except Exception as exc:  # noqa: BLE001
+                logging.exception("Failed to embed batch blob %s", blob_name)
+                errors.append(
+                    {
+                        "blob": blob_name,
+                        "error_type": type(exc).__name__,
+                        "message": str(exc),
+                    }
+                )
+    except Exception as exc:  # noqa: BLE001
+        logging.exception("Failed to initialize embed batch processing")
+        return build_failure_response(exc)
+
+    return json_response(
+        {
+            "status": "completed",
+            "stage": "embed",
+            "source_container": CLEANED_CONTAINER,
+            "prefix": options["prefix"],
+            "limit": options["limit"],
+            "processed_count": len(processed_items),
+            "skipped_count": len(skipped_items),
+            "error_count": len(errors),
+            "processed_items": processed_items,
+            "skipped_items": skipped_items,
+            "errors": errors,
+        },
+        status_code=200,
+    )
+
+
+@app.function_name(name="process_gsc_batch")
+@app.route(route="admin/process-batch", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
+def process_gsc_batch(req: func.HttpRequest) -> func.HttpResponse:
+    options, error_response = parse_batch_request(req, default_limit=5)
+    if error_response:
+        return error_response
+
+    assert options is not None
+
+    processed_items = []
+    skipped_items = []
+    errors = []
+
+    try:
+        service = get_blob_service()
+        source_container = service.get_container_client(SOURCE_CONTAINER)
+
+        for blob in source_container.list_blobs(name_starts_with=options["prefix"]):
+            blob_name = blob.name
+
+            if not blob_name.lower().endswith(".aspx"):
+                skipped_items.append({"blob": blob_name, "reason": "Not an .aspx blob"})
+                continue
+
+            if len(processed_items) >= options["limit"]:
+                break
+
+            try:
+                processed_items.append(process_source_blob(service, blob_name, options["embed_requested"]))
+            except BlobSourceNotFoundError as exc:
+                logging.exception("Source blob disappeared during process batch: %s", blob_name)
                 errors.append(
                     {
                         "blob": blob_name,
@@ -349,20 +664,18 @@ def process_gsc_batch(req: func.HttpRequest) -> func.HttpResponse:
                     }
                 )
     except Exception as exc:  # noqa: BLE001
-        logging.exception("Failed to initialize batch processing")
-        return json_response(
-            error_payload(message=str(exc), error_type=type(exc).__name__),
-            status_code=500,
-        )
+        logging.exception("Failed to initialize combined batch processing")
+        return build_failure_response(exc)
 
     return json_response(
         {
             "status": "completed",
+            "stage": "process",
             "source_container": SOURCE_CONTAINER,
             "output_container": CLEANED_CONTAINER,
-            "prefix": prefix,
-            "limit": limit,
-            "embed_requested": embed_requested,
+            "prefix": options["prefix"],
+            "limit": options["limit"],
+            "embed_requested": options["embed_requested"],
             "processed_count": len(processed_items),
             "skipped_count": len(skipped_items),
             "error_count": len(errors),
@@ -380,10 +693,7 @@ def health_check(req: func.HttpRequest) -> func.HttpResponse:
     del req
 
     env_report = {
-        "required": {
-            name: {"present": bool(os.getenv(name))}
-            for name in REQUIRED_ENV_VARS
-        },
+        "required": {name: {"present": bool(os.getenv(name))} for name in REQUIRED_ENV_VARS},
         "defaults": {
             "OUTPUT_CONTAINER": CLEANED_CONTAINER,
             "CHUNK_TABLE_NAME": os.getenv("CHUNK_TABLE_NAME", "gsc_vector_rag"),
@@ -451,6 +761,15 @@ def health_check(req: func.HttpRequest) -> func.HttpResponse:
                 "blob_storage": blob_storage_check,
                 "postgres": postgres_check,
             },
+            "functions": [
+                "clean_one_gsc_blob",
+                "embed_one_cleaned_blob",
+                "process_one_gsc_blob",
+                "clean_gsc_batch",
+                "embed_cleaned_batch",
+                "process_gsc_batch",
+                "health_check",
+            ],
         },
         status_code=200 if overall_healthy else 503,
     )

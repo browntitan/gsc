@@ -4,14 +4,22 @@ This Azure Functions Python project uses an HTTP-only architecture for one-time 
 
 ## Functions
 
+- `clean_one_gsc_blob`
+  - `POST /api/admin/clean-one`
+- `embed_one_cleaned_blob`
+  - `POST /api/admin/embed-one`
 - `process_one_gsc_blob`
   - `POST /api/admin/process-one`
+- `clean_gsc_batch`
+  - `POST /api/admin/clean-batch`
+- `embed_cleaned_batch`
+  - `POST /api/admin/embed-batch`
 - `process_gsc_batch`
   - `POST /api/admin/process-batch`
 - `health_check`
   - `GET /api/admin/health`
 
-All routes use `FUNCTION` auth.
+All routes use `FUNCTION` auth. Use the `clean-*` and `embed-*` routes when you want full step-by-step control, and use the `process-*` routes when you want cleaning and embedding in one HTTP call.
 
 ## Required app settings
 
@@ -49,6 +57,55 @@ az cloud set --name AzureUSGovernment
 func azure functionapp publish funciton-app-shiv-gsc-test --management-url https://management.usgovcloudapi.net
 ```
 
+## Create and deploy a new Function App from VS Code
+
+Set VS Code to Azure Government before signing in:
+
+1. Open `File > Preferences > Settings`.
+2. Search for `Azure: Cloud`.
+3. Set it to `AzureUSGovernment`.
+
+Then use these VS Code command palette commands:
+
+```text
+Azure: Sign In
+Azure: Select Subscriptions
+Azure Functions: Install or Update Core Tools
+Azure Functions: Create New Project...
+Azure Functions: Create Function App in Azure...(Advanced)
+Azure Functions: Deploy to Function App
+```
+
+Recommended choices for this project when `Azure Functions: Create New Project...` runs:
+
+```text
+Language: Python
+Programming model: Model V2
+Template for first function: Skip for now
+```
+
+Recommended choices when `Azure Functions: Create Function App in Azure...(Advanced)` runs:
+
+```text
+Subscription: your Azure Government subscription
+Function app name: <globally-unique-name>
+Runtime stack: Python
+Runtime version: choose the current supported Python version for your target app
+OS: Linux
+Hosting plan: Consumption or Elastic Premium
+Resource group: create new or select existing
+Storage account: create new or select existing
+Application Insights: create new or select existing
+```
+
+After VS Code creates the new app, publish your local project:
+
+```text
+Azure Functions: Deploy to Function App
+```
+
+VS Code then prompts you to pick the target Function App and confirm overwrite for the remote contents.
+
 ## List indexed functions
 
 ```powershell
@@ -56,6 +113,48 @@ az functionapp function list `
   --name funciton-app-shiv-gsc-test `
   --resource-group funciton-app-shiv-gsc-test_group `
   --output table
+```
+
+## Invoke `clean_one_gsc_blob`
+
+```powershell
+$cleanOneKey = az functionapp function keys list `
+  --name funciton-app-shiv-gsc-test `
+  --resource-group funciton-app-shiv-gsc-test_group `
+  --function-name clean_one_gsc_blob `
+  --query default `
+  --output tsv
+
+$cleanOneUrl = "https://funciton-app-shiv-gsc-test.azurewebsites.us/api/admin/clean-one?code=$cleanOneKey"
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri $cleanOneUrl `
+  -ContentType "application/json" `
+  -Body (@{
+    blob = "path/to/example.aspx"
+  } | ConvertTo-Json)
+```
+
+## Invoke `embed_one_cleaned_blob`
+
+```powershell
+$embedOneKey = az functionapp function keys list `
+  --name funciton-app-shiv-gsc-test `
+  --resource-group funciton-app-shiv-gsc-test_group `
+  --function-name embed_one_cleaned_blob `
+  --query default `
+  --output tsv
+
+$embedOneUrl = "https://funciton-app-shiv-gsc-test.azurewebsites.us/api/admin/embed-one?code=$embedOneKey"
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri $embedOneUrl `
+  -ContentType "application/json" `
+  -Body (@{
+    blob = "path/to/example.txt"
+  } | ConvertTo-Json)
 ```
 
 ## Invoke `process_one_gsc_blob`
@@ -77,6 +176,50 @@ Invoke-RestMethod `
   -Body (@{
     blob = "path/to/example.aspx"
     embed = $true
+  } | ConvertTo-Json)
+```
+
+## Invoke `clean_gsc_batch`
+
+```powershell
+$cleanBatchKey = az functionapp function keys list `
+  --name funciton-app-shiv-gsc-test `
+  --resource-group funciton-app-shiv-gsc-test_group `
+  --function-name clean_gsc_batch `
+  --query default `
+  --output tsv
+
+$cleanBatchUrl = "https://funciton-app-shiv-gsc-test.azurewebsites.us/api/admin/clean-batch?code=$cleanBatchKey"
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri $cleanBatchUrl `
+  -ContentType "application/json" `
+  -Body (@{
+    limit = 5
+    prefix = ""
+  } | ConvertTo-Json)
+```
+
+## Invoke `embed_cleaned_batch`
+
+```powershell
+$embedBatchKey = az functionapp function keys list `
+  --name funciton-app-shiv-gsc-test `
+  --resource-group funciton-app-shiv-gsc-test_group `
+  --function-name embed_cleaned_batch `
+  --query default `
+  --output tsv
+
+$embedBatchUrl = "https://funciton-app-shiv-gsc-test.azurewebsites.us/api/admin/embed-batch?code=$embedBatchKey"
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri $embedBatchUrl `
+  -ContentType "application/json" `
+  -Body (@{
+    limit = 5
+    prefix = ""
   } | ConvertTo-Json)
 ```
 
