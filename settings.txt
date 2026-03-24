@@ -66,3 +66,6 @@ az functionapp function keys list \
   --resource-group "<EXACT_RESOURCE_GROUP_NAME>" \
   --subscription "ES-US-T-CDOOAIPOC-SUB-01" \
   --function-name backfill_existing_gsc
+
+
+  func azure functionapp publish func-app-gsc-2 --management-url https://management.usgovcloudapi.net
