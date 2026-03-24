@@ -1,0 +1,13 @@
+{
+  "azureFunctions.projectLanguage": "Python",
+  "azureFunctions.projectRuntime": "~4",
+  "azureFunctions.projectSubpath": ".",
+  "azureFunctions.deploySubpath": ".",
+  "python.defaultInterpreterPath": ".venv/bin/python",
+  "python.analysis.extraPaths": [
+    "."
+  ],
+  "files.exclude": {
+    "**/__pycache__": true
+  }
+}

@@ -7,6 +7,7 @@ import os
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Tuple
+from urllib import error as urlerror
 from urllib import request
 
 import psycopg
@@ -36,6 +37,7 @@ class Settings:
     embedding_base_url: str
     embedding_api_key: str
     embedding_deployment: str
+    embedding_path: str = "/embeddings"
     embedding_dimensions: int = 1536
     request_timeout_seconds: int = 120
     chunk_size: int = 120
@@ -49,27 +51,45 @@ def clean_optional(value: Optional[str]) -> Optional[str]:
     return cleaned or None
 
 
+def require_env(name: str) -> str:
+    value = clean_optional(os.getenv(name))
+    if value is None:
+        raise RuntimeError(f"Missing required app setting: {name}")
+    return value
+
+
+def parse_int_env(name: str, default: int) -> int:
+    value = clean_optional(os.getenv(name))
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise RuntimeError(f"App setting {name} must be an integer, got {value!r}") from exc
+
+
 def load_settings() -> Settings:
     return Settings(
-        database_url=os.environ["PGVECTOR_DATABASE_URL"],
+        database_url=require_env("PGVECTOR_DATABASE_URL"),
         chunk_table_name=os.getenv("CHUNK_TABLE_NAME", "gsc_vector_rag"),
         collection_name=os.getenv("COLLECTION_NAME", "gsc-internal-policies"),
-        embedding_base_url=os.environ["AZURE_OPENAI_BASE_URL"],
-        embedding_api_key=os.environ["AZURE_OPENAI_API_KEY"],
+        embedding_base_url=require_env("AZURE_OPENAI_BASE_URL"),
+        embedding_api_key=require_env("AZURE_OPENAI_API_KEY"),
         embedding_deployment=os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-ada-002"),
-        embedding_dimensions=int(os.getenv("EMBEDDING_DIMENSIONS", "1536")),
-        request_timeout_seconds=int(os.getenv("REQUEST_TIMEOUT_SECONDS", "120")),
-        chunk_size=int(os.getenv("CHUNK_SIZE", "120")),
-        chunk_overlap=int(os.getenv("CHUNK_OVERLAP", "20")),
+        embedding_path=os.getenv("AZURE_OPENAI_EMBEDDINGS_PATH", "/embeddings"),
+        embedding_dimensions=parse_int_env("EMBEDDING_DIMENSIONS", 1536),
+        request_timeout_seconds=parse_int_env("REQUEST_TIMEOUT_SECONDS", 120),
+        chunk_size=parse_int_env("CHUNK_SIZE", 120),
+        chunk_overlap=parse_int_env("CHUNK_OVERLAP", 20),
     )
 
 
 def normalize_identifier(value: Optional[str]) -> Optional[str]:
     if value is None:
         return None
-    value = value.strip().upper()
-    value = re.sub(r"\s+", "", value)
-    return value or None
+    normalized = value.strip().upper()
+    normalized = re.sub(r"\s+", "", normalized)
+    return normalized or None
 
 
 def vector_literal(values: List[float]) -> str:
@@ -77,15 +97,33 @@ def vector_literal(values: List[float]) -> str:
 
 
 def validate_table_name(value: str) -> str:
-    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value):
+    if not re.fullmatch(r"[A-Za-z0-9_]+", value):
         raise ValueError(
-            f"Invalid table name: {value}. Use letters, numbers, and underscores only."
+            f"Invalid table name: {value}. Use only letters, numbers, and underscores."
         )
     return value
 
 
 def get_connection(database_url: str) -> psycopg.Connection:
     return psycopg.connect(database_url, row_factory=dict_row)
+
+
+def check_database_connection() -> Dict[str, Any]:
+    database_url = require_env("PGVECTOR_DATABASE_URL")
+    chunk_table_name = os.getenv("CHUNK_TABLE_NAME", "gsc_vector_rag")
+    collection_name = os.getenv("COLLECTION_NAME", "gsc-internal-policies")
+
+    with get_connection(database_url) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 AS ok")
+            row = cur.fetchone()
+
+    return {
+        "database": "reachable",
+        "chunk_table_name": chunk_table_name,
+        "collection_name": collection_name,
+        "query_result": row,
+    }
 
 
 def ensure_schema(database_url: str, table_name: str, dimensions: int) -> None:
@@ -217,25 +255,86 @@ def upsert_rows(database_url: str, table_name: str, rows: Iterable[Dict[str, Any
     return count
 
 
+def build_embeddings_url(settings: Settings) -> str:
+    base_url = settings.embedding_base_url.rstrip("/")
+    path = (settings.embedding_path or "/embeddings").strip()
+    if not path.startswith("/"):
+        path = "/" + path
+    return base_url + path
+
+
 def post_json(
     url: str,
-    payload: dict,
-    headers: Optional[dict] = None,
+    payload: Dict[str, Any],
+    headers: Optional[Dict[str, str]] = None,
     timeout: int = 120,
-) -> dict:
+) -> Dict[str, Any]:
     req = request.Request(
         url=url,
         data=json.dumps(payload).encode("utf-8"),
         headers={"Content-Type": "application/json", **(headers or {})},
         method="POST",
     )
-    with request.urlopen(req, timeout=timeout) as response:
-        return json.loads(response.read().decode("utf-8"))
+
+    try:
+        with request.urlopen(req, timeout=timeout) as response:
+            raw_body = response.read().decode("utf-8", errors="replace")
+    except urlerror.HTTPError as exc:
+        error_body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(
+            f"Embedding request failed with status {exc.code}: {error_body}"
+        ) from exc
+    except urlerror.URLError as exc:
+        raise RuntimeError(f"Embedding request failed: {exc.reason}") from exc
+
+    try:
+        payload_json = json.loads(raw_body)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Embedding endpoint returned non-JSON response: {raw_body}") from exc
+
+    if not isinstance(payload_json, dict):
+        raise RuntimeError(
+            f"Embedding endpoint returned unexpected payload shape: {payload_json!r}"
+        )
+    return payload_json
+
+
+def extract_embedding_vector(response_payload: Dict[str, Any], expected_dimensions: int) -> List[float]:
+    data = response_payload.get("data")
+    if not isinstance(data, list) or not data:
+        raise RuntimeError(
+            f"Embedding endpoint returned unexpected payload shape: {response_payload!r}"
+        )
+
+    first_item = data[0]
+    if not isinstance(first_item, dict) or "embedding" not in first_item:
+        raise RuntimeError(
+            f"Embedding endpoint returned unexpected payload shape: {response_payload!r}"
+        )
+
+    embedding = first_item["embedding"]
+    if not isinstance(embedding, list):
+        raise RuntimeError(
+            f"Embedding endpoint returned unexpected payload shape: {response_payload!r}"
+        )
+
+    try:
+        vector = [float(value) for value in embedding]
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            f"Embedding endpoint returned unexpected payload shape: {response_payload!r}"
+        ) from exc
+
+    if len(vector) != expected_dimensions:
+        raise RuntimeError(
+            f"Embedding dimension mismatch: expected {expected_dimensions}, got {len(vector)}"
+        )
+    return vector
 
 
 def embed_text(text: str, settings: Settings) -> List[float]:
-    response = post_json(
-        settings.embedding_base_url.rstrip("/") + "/embeddings",
+    response_payload = post_json(
+        build_embeddings_url(settings),
         payload={
             "model": settings.embedding_deployment,
             "input": text,
@@ -243,16 +342,7 @@ def embed_text(text: str, settings: Settings) -> List[float]:
         headers={"api-key": settings.embedding_api_key},
         timeout=settings.request_timeout_seconds,
     )
-    data = response.get("data") or []
-    if not data or "embedding" not in data[0]:
-        raise RuntimeError(f"Embedding endpoint returned unexpected payload: {response}")
-
-    vector = data[0]["embedding"]
-    if len(vector) != settings.embedding_dimensions:
-        raise RuntimeError(
-            f"Embedding dimension mismatch: expected {settings.embedding_dimensions}, got {len(vector)}"
-        )
-    return vector
+    return extract_embedding_vector(response_payload, settings.embedding_dimensions)
 
 
 def clean_text(raw: str) -> str:
@@ -283,11 +373,10 @@ def normalize_termset_number(value: str) -> Optional[str]:
 
 
 def first_sentence(text: str) -> str:
-    text = re.sub(r"\s+", " ", text).strip()
-    if not text:
+    normalized = re.sub(r"\s+", " ", text).strip()
+    if not normalized:
         return ""
-    match = re.split(r"(?<=[.!?])\s+", text, maxsplit=1)
-    return match[0][:400]
+    return re.split(r"(?<=[.!?])\s+", normalized, maxsplit=1)[0][:400]
 
 
 def detect_topic(clause_title: Optional[str], body: str) -> Optional[str]:
@@ -449,8 +538,7 @@ def _clean_clause_body(lines: List[str], heading_idx: int, applicable_start: int
         idx += 1
 
     body = "\n".join(body_lines)
-    body = re.sub(r"\n{3,}", "\n\n", body).strip()
-    return body
+    return re.sub(r"\n{3,}", "\n\n", body).strip()
 
 
 def segment_clause_body(body: str) -> List[Dict[str, str]]:
@@ -462,6 +550,7 @@ def segment_clause_body(body: str) -> List[Dict[str, str]]:
 
     def flush() -> None:
         nonlocal current_lines
+
         text = "\n".join(current_lines).strip()
         if not text:
             current_lines = []
@@ -511,8 +600,8 @@ def parse_clause_document_text(raw: str, source_name: str) -> Dict[str, Any]:
     heading = _find_clause_heading(lines)
     if not heading:
         raise ValueError(f"No clause heading like '12. Warranty' was found in {source_name}")
-    heading_idx, clause_number, clause_title = heading
 
+    heading_idx, clause_number, clause_title = heading
     full_codes, applicable_start, applicable_end = _find_applicable_block(lines, heading_idx + 1)
     normalized_termsets = [normalize_termset_number(code) for code in full_codes]
     normalized_termsets = [value for value in normalized_termsets if value]
@@ -521,8 +610,6 @@ def parse_clause_document_text(raw: str, source_name: str) -> Dict[str, Any]:
     if not body:
         raise ValueError(f"No substantive clause body remained after cleaning {source_name}")
 
-    source_status = _detect_source_status(text)
-
     return {
         "clause_number": clause_number,
         "clause_title": clause_title,
@@ -530,11 +617,15 @@ def parse_clause_document_text(raw: str, source_name: str) -> Dict[str, Any]:
         "termset_numbers": normalized_termsets,
         "body": body,
         "segments": segment_clause_body(body),
-        "source_status": source_status,
+        "source_status": _detect_source_status(text),
     }
 
 
-def build_rows_for_text(source_name: str, raw_text: str, settings: Settings) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+def build_rows_for_text(
+    source_name: str,
+    raw_text: str,
+    settings: Settings,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     skips: List[Dict[str, Any]] = []
     rows: List[Dict[str, Any]] = []
 
@@ -544,13 +635,13 @@ def build_rows_for_text(source_name: str, raw_text: str, settings: Settings) -> 
         skips.append({"file": source_name, "reason": str(exc)})
         return rows, skips
 
-    segments = parsed.get("segments") or []
     chunk_entries: List[Dict[str, Any]] = []
-    for segment in segments:
+    for segment in parsed.get("segments") or []:
         segment_title = clean_optional(segment.get("title")) or "Overview"
         segment_text = clean_optional(segment.get("text"))
         if not segment_text:
             continue
+
         for chunk in chunk_segment_text(segment_title, segment_text, settings.chunk_size, settings.chunk_overlap):
             chunk_entries.append(
                 {
@@ -582,10 +673,13 @@ def build_rows_for_text(source_name: str, raw_text: str, settings: Settings) -> 
     for termset_number, full_code in termset_pairs:
         for idx, chunk_entry in enumerate(chunk_entries, start=1):
             external_id = hashlib.sha256(
-                f"{settings.collection_name}|{source_name}|{parsed['clause_number']}|{termset_number or 'none'}|{idx}".encode("utf-8")
+                (
+                    f"{settings.collection_name}|{source_name}|{parsed['clause_number']}|"
+                    f"{termset_number or 'none'}|{idx}"
+                ).encode("utf-8")
             ).hexdigest()
 
-            metadata = {
+            metadata: Dict[str, Any] = {
                 "source_format": "clause_repository_txt",
                 "source_doc": source_name,
                 "clause_title": parsed["clause_title"],
@@ -594,6 +688,7 @@ def build_rows_for_text(source_name: str, raw_text: str, settings: Settings) -> 
                 "segment_title": chunk_entry["segment_title"],
                 "chunk_index": idx,
             }
+
             if termset_number:
                 metadata["termset_number"] = termset_number
             if full_code:
