@@ -30,3 +30,8 @@ az functionapp config access-restriction show \
   --name function-app-shiv-gsc-test \
   --resource-group function-app-shiv-gsc-test_group \
   --subscription "ES-US-T-CDOOAIPOC-SUB-01"
+
+  az functionapp function list \
+  --name function-app-shiv-gsc-test \
+  --resource-group function-app-shiv-gsc-test_group \
+  --subscription "ES-US-T-CDOOAIPOC-SUB-01"
