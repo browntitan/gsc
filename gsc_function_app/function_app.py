@@ -382,7 +382,7 @@ def build_failure_response(
 
 
 @app.function_name(name="clean_one_gsc_blob")
-@app.route(route="admin/clean-one", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
+@app.route(route="gsc/clean-one", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
 def clean_one_gsc_blob(req: func.HttpRequest) -> func.HttpResponse:
     blob_name, error_response = parse_blob_request(
         req,
@@ -411,7 +411,7 @@ def clean_one_gsc_blob(req: func.HttpRequest) -> func.HttpResponse:
 
 
 @app.function_name(name="embed_one_cleaned_blob")
-@app.route(route="admin/embed-one", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
+@app.route(route="gsc/embed-one", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
 def embed_one_cleaned_blob(req: func.HttpRequest) -> func.HttpResponse:
     blob_name, error_response = parse_blob_request(
         req,
@@ -435,7 +435,7 @@ def embed_one_cleaned_blob(req: func.HttpRequest) -> func.HttpResponse:
 
 
 @app.function_name(name="process_one_gsc_blob")
-@app.route(route="admin/process-one", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
+@app.route(route="gsc/process-one", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
 def process_one_gsc_blob(req: func.HttpRequest) -> func.HttpResponse:
     body, body_error = parse_request_json(req)
     if body_error:
@@ -472,7 +472,7 @@ def process_one_gsc_blob(req: func.HttpRequest) -> func.HttpResponse:
 
 
 @app.function_name(name="clean_gsc_batch")
-@app.route(route="admin/clean-batch", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
+@app.route(route="gsc/clean-batch", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
 def clean_gsc_batch(req: func.HttpRequest) -> func.HttpResponse:
     options, error_response = parse_batch_request(req, default_limit=5)
     if error_response:
@@ -546,7 +546,7 @@ def clean_gsc_batch(req: func.HttpRequest) -> func.HttpResponse:
 
 
 @app.function_name(name="embed_cleaned_batch")
-@app.route(route="admin/embed-batch", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
+@app.route(route="gsc/embed-batch", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
 def embed_cleaned_batch(req: func.HttpRequest) -> func.HttpResponse:
     options, error_response = parse_batch_request(req, default_limit=5)
     if error_response:
@@ -615,7 +615,7 @@ def embed_cleaned_batch(req: func.HttpRequest) -> func.HttpResponse:
 
 
 @app.function_name(name="process_gsc_batch")
-@app.route(route="admin/process-batch", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
+@app.route(route="gsc/process-batch", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
 def process_gsc_batch(req: func.HttpRequest) -> func.HttpResponse:
     options, error_response = parse_batch_request(req, default_limit=5)
     if error_response:
@@ -688,7 +688,7 @@ def process_gsc_batch(req: func.HttpRequest) -> func.HttpResponse:
 
 
 @app.function_name(name="health_check")
-@app.route(route="admin/health", methods=["GET"], auth_level=func.AuthLevel.FUNCTION)
+@app.route(route="gsc/health", methods=["GET"], auth_level=func.AuthLevel.FUNCTION)
 def health_check(req: func.HttpRequest) -> func.HttpResponse:
     del req
 
