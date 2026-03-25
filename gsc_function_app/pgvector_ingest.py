@@ -7,8 +7,8 @@ import os
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Tuple
-from urllib import error as urlerror
-from urllib import request
+import httpx
+from langchain_openai import AzureOpenAIEmbeddings
 
 import psycopg
 from psycopg import sql
@@ -38,6 +38,7 @@ class Settings:
     embedding_api_key: str
     embedding_deployment: str
     embedding_path: str = "/embeddings"
+    api_version: str = "2024-02-01"
     embedding_dimensions: int = 1536
     request_timeout_seconds: int = 120
     chunk_size: int = 120
@@ -77,6 +78,7 @@ def load_settings() -> Settings:
         embedding_api_key=require_env("AZURE_OPENAI_API_KEY"),
         embedding_deployment=os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-ada-002"),
         embedding_path=os.getenv("AZURE_OPENAI_EMBEDDINGS_PATH", "/embeddings"),
+        api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01"),
         embedding_dimensions=parse_int_env("EMBEDDING_DIMENSIONS", 1536),
         request_timeout_seconds=parse_int_env("REQUEST_TIMEOUT_SECONDS", 120),
         chunk_size=parse_int_env("CHUNK_SIZE", 120),
@@ -254,94 +256,21 @@ def upsert_rows(database_url: str, table_name: str, rows: Iterable[Dict[str, Any
     return count
 
 
-def build_embeddings_url(settings: Settings) -> str:
-    base_url = settings.embedding_base_url.rstrip("/")
-    path = (settings.embedding_path or "/embeddings").strip()
-    if not path.startswith("/"):
-        path = "/" + path
-    return base_url + path
-
-
-def post_json(
-    url: str,
-    payload: Dict[str, Any],
-    headers: Optional[Dict[str, str]] = None,
-    timeout: int = 120,
-) -> Dict[str, Any]:
-    req = request.Request(
-        url=url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json", **(headers or {})},
-        method="POST",
+def embed_text(text: str, settings: Settings) -> List[float]:
+    httpx_client = httpx.Client(http2=True, verify=False, timeout=settings.request_timeout_seconds)
+    embeddings = AzureOpenAIEmbeddings(
+        azure_deployment=settings.embedding_deployment,
+        azure_endpoint=settings.embedding_base_url,
+        api_key=settings.embedding_api_key,
+        api_version=settings.api_version,
+        http_client=httpx_client,
     )
-
-    try:
-        with request.urlopen(req, timeout=timeout) as response:
-            raw_body = response.read().decode("utf-8", errors="replace")
-    except urlerror.HTTPError as exc:
-        error_body = exc.read().decode("utf-8", errors="replace")
+    vector = embeddings.embed_query(text)
+    if len(vector) != settings.embedding_dimensions:
         raise RuntimeError(
-            f"Embedding request failed with status {exc.code}: {error_body}"
-        ) from exc
-    except urlerror.URLError as exc:
-        raise RuntimeError(f"Embedding request failed: {exc.reason}") from exc
-
-    try:
-        payload_json = json.loads(raw_body)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"Embedding endpoint returned non-JSON response: {raw_body}") from exc
-
-    if not isinstance(payload_json, dict):
-        raise RuntimeError(
-            f"Embedding endpoint returned unexpected payload shape: {payload_json!r}"
-        )
-    return payload_json
-
-
-def extract_embedding_vector(response_payload: Dict[str, Any], expected_dimensions: int) -> List[float]:
-    data = response_payload.get("data")
-    if not isinstance(data, list) or not data:
-        raise RuntimeError(
-            f"Embedding endpoint returned unexpected payload shape: {response_payload!r}"
-        )
-
-    first_item = data[0]
-    if not isinstance(first_item, dict) or "embedding" not in first_item:
-        raise RuntimeError(
-            f"Embedding endpoint returned unexpected payload shape: {response_payload!r}"
-        )
-
-    embedding = first_item["embedding"]
-    if not isinstance(embedding, list):
-        raise RuntimeError(
-            f"Embedding endpoint returned unexpected payload shape: {response_payload!r}"
-        )
-
-    try:
-        vector = [float(value) for value in embedding]
-    except (TypeError, ValueError) as exc:
-        raise RuntimeError(
-            f"Embedding endpoint returned unexpected payload shape: {response_payload!r}"
-        ) from exc
-
-    if len(vector) != expected_dimensions:
-        raise RuntimeError(
-            f"Embedding dimension mismatch: expected {expected_dimensions}, got {len(vector)}"
+            f"Embedding dimension mismatch: expected {settings.embedding_dimensions}, got {len(vector)}"
         )
     return vector
-
-
-def embed_text(text: str, settings: Settings) -> List[float]:
-    response_payload = post_json(
-        build_embeddings_url(settings),
-        payload={
-            "model": settings.embedding_deployment,
-            "input": text,
-        },
-        headers={"api-key": settings.embedding_api_key},
-        timeout=settings.request_timeout_seconds,
-    )
-    return extract_embedding_vector(response_payload, settings.embedding_dimensions)
 
 
 def clean_text(raw: str) -> str:
