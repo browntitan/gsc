@@ -135,7 +135,6 @@ def ensure_schema(database_url: str, table_name: str, dimensions: int) -> None:
     with get_connection(database_url) as conn:
         with conn.cursor() as cur:
             cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
-            cur.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
             cur.execute(
                 sql.SQL(
                     """
