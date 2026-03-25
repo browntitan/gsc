@@ -269,11 +269,24 @@ Invoke-RestMethod `
 - Check streaming logs with `func azure functionapp logstream func-app-gsc-3 --management-url https://management.usgovcloudapi.net`.
 - Use `GET /api/gsc/health` to confirm required app settings and dependency access.
 
+### Check package layout after deploy
+
+- In the Azure portal, open `Advanced Tools (Kudu)` for the Function App and inspect `/site/wwwroot`.
+- `function_app.py`, `host.json`, and `requirements.txt` must be directly under `/site/wwwroot`.
+- If you see them under `/site/wwwroot/gsc_function_app/`, the wrong folder was deployed and the runtime will not discover the app correctly.
+
 ### Import or module errors
 
 - Make sure `requirements.txt` was deployed with the code.
+- For ZIP/manual deploys, make sure remote build is enabled if the platform needs to install Python dependencies.
 - The canonical cleaner filename is `aspx_cleaner.py`, and imports now use `from aspx_cleaner import ...`.
 - Re-run `python -m py_compile` locally before deploying.
+
+### Host runtime settings
+
+- Verify `FUNCTIONS_WORKER_RUNTIME=python`.
+- Verify `AzureWebJobsStorage` exists and points to a valid storage account the app can reach.
+- These runtime settings are different from the custom app settings used by the HTTP handlers.
 
 ### PostgreSQL connection errors
 

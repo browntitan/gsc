@@ -1,0 +1,9 @@
+{
+  "azureFunctions.projectLanguage": "Python",
+  "azureFunctions.projectRuntime": "~4",
+  "azureFunctions.projectSubpath": "gsc_function_app",
+  "azureFunctions.deploySubpath": "gsc_function_app",
+  "files.exclude": {
+    "**/__pycache__": true
+  }
+}
