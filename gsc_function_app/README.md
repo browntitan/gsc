@@ -2,6 +2,9 @@
 
 This Azure Functions Python project uses an HTTP-only architecture for one-time ASPX processing in Azure Government.
 
+Important deployment note:
+Deploy the contents of `gsc_function_app`, not the repo root. The deployment package root must contain `function_app.py`, `host.json`, and `requirements.txt` directly.
+
 ## Functions
 
 - `clean_one_gsc_blob`
@@ -55,6 +58,29 @@ func start
 Set-Location "C:\path\to\openwebui-supplychain-demo\gsc_function_app"
 az cloud set --name AzureUSGovernment
 func azure functionapp publish funciton-app-shiv-gsc-test --management-url https://management.usgovcloudapi.net
+```
+
+## Create a correct portal ZIP package
+
+If you want to deploy by ZIP from the Azure portal or Deployment Center, create the archive from inside `gsc_function_app` so the package root is correct:
+
+```powershell
+Set-Location "C:\path\to\openwebui-supplychain-demo\gsc_function_app"
+.\package_for_portal.ps1
+```
+
+The generated ZIP is written to:
+
+```text
+gsc_function_app\dist\gsc_function_app_portal.zip
+```
+
+That ZIP should contain these files at the ZIP root, not nested under another folder:
+
+```text
+function_app.py
+host.json
+requirements.txt
 ```
 
 ## Create and deploy a new Function App from VS Code
@@ -250,16 +276,30 @@ Invoke-RestMethod `
 
 ### Functions do not appear after deploy
 
+- If you deployed the repo root, redeploy using only the `gsc_function_app` contents.
 - Confirm the deploy was run from the `gsc_function_app` folder.
 - Run `az functionapp function list` after deployment completes and trigger sync finishes.
 - Check streaming logs with `func azure functionapp logstream funciton-app-shiv-gsc-test --management-url https://management.usgovcloudapi.net`.
 - Use `GET /api/admin/health` to confirm required app settings and dependency access.
 
+### Check package layout after deploy
+
+- In the Azure portal, open `Advanced Tools (Kudu)` for the Function App and inspect `/site/wwwroot`.
+- `function_app.py`, `host.json`, and `requirements.txt` must be directly under `/site/wwwroot`.
+- If you see them under `/site/wwwroot/gsc_function_app/`, the wrong folder was deployed and the runtime will not discover the app correctly.
+
 ### Import or module errors
 
 - Make sure `requirements.txt` was deployed with the code.
+- For ZIP/manual deploys, make sure remote build is enabled if the platform needs to install Python dependencies.
 - The canonical cleaner filename is `aspx_cleaner.py`, and imports now use `from aspx_cleaner import ...`.
 - Re-run `python -m py_compile` locally before deploying.
+
+### Host runtime settings
+
+- Verify `FUNCTIONS_WORKER_RUNTIME=python`.
+- Verify `AzureWebJobsStorage` exists and points to a valid storage account the app can reach.
+- These runtime settings are different from the custom app settings used by the HTTP handlers.
 
 ### PostgreSQL connection errors
 
