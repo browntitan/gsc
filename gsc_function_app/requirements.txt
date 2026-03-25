@@ -2,3 +2,5 @@ azure-functions
 azure-storage-blob
 beautifulsoup4
 psycopg[binary]
+langchain-openai
+httpx[http2]
