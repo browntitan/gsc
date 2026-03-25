@@ -2,34 +2,37 @@
 
 This Azure Functions Python project uses an HTTP-only architecture for one-time ASPX processing in Azure Government.
 
-Important deployment note:
-Deploy the contents of `gsc_function_app`, not the repo root. The deployment package root must contain `function_app.py`, `host.json`, and `requirements.txt` directly.
+For detailed documentation on each function including inputs, outputs, data transformation steps, and database schema, see [FUNCTION_REFERENCE.md](FUNCTION_REFERENCE.md).
 
 ## Functions
 
 - `clean_one_gsc_blob`
-  - `POST /api/admin/clean-one`
+  - `POST /api/gsc/clean-one`
 - `embed_one_cleaned_blob`
-  - `POST /api/admin/embed-one`
+  - `POST /api/gsc/embed-one`
 - `process_one_gsc_blob`
-  - `POST /api/admin/process-one`
+  - `POST /api/gsc/process-one`
 - `clean_gsc_batch`
-  - `POST /api/admin/clean-batch`
+  - `POST /api/gsc/clean-batch`
 - `embed_cleaned_batch`
-  - `POST /api/admin/embed-batch`
+  - `POST /api/gsc/embed-batch`
 - `process_gsc_batch`
-  - `POST /api/admin/process-batch`
+  - `POST /api/gsc/process-batch`
 - `health_check`
-  - `GET /api/admin/health`
+  - `GET /api/gsc/health`
 
 All routes use `FUNCTION` auth. Use the `clean-*` and `embed-*` routes when you want full step-by-step control, and use the `process-*` routes when you want cleaning and embedding in one HTTP call.
 
 ## Required app settings
 
-- `cdooaipocdata1_STORAGE`
-- `PGVECTOR_DATABASE_URL`
-- `AZURE_OPENAI_BASE_URL`
-- `AZURE_OPENAI_API_KEY`
+| Name | Description |
+|---|---|
+| `AzureWebJobsFeatureFlags` | Must be set to `EnableWorkerIndexing` for Python v2 functions to be discovered |
+| `FUNCTIONS_WORKER_RUNTIME` | Must be set to `python` |
+| `cdooaipocdata1_STORAGE` | Azure Blob Storage connection string (find in Storage Account > Access keys) |
+| `PGVECTOR_DATABASE_URL` | PostgreSQL connection string (e.g. `postgresql://user:pass@host:5432/dbname`) |
+| `AZURE_OPENAI_BASE_URL` | Azure OpenAI endpoint URL |
+| `AZURE_OPENAI_API_KEY` | Azure OpenAI API key |
 
 ## Optional app settings and defaults
 
@@ -54,34 +57,16 @@ func start
 
 ## Azure Government deploy
 
+Deploy using the Azure Functions Core Tools with remote build:
+
 ```powershell
 Set-Location "C:\path\to\openwebui-supplychain-demo\gsc_function_app"
 az cloud set --name AzureUSGovernment
-func azure functionapp publish funciton-app-shiv-gsc-test --management-url https://management.usgovcloudapi.net
+az login
+func azure functionapp publish func-app-gsc-3 --build remote --python
 ```
 
-## Create a correct portal ZIP package
-
-If you want to deploy by ZIP from the Azure portal or Deployment Center, create the archive from inside `gsc_function_app` so the package root is correct:
-
-```powershell
-Set-Location "C:\path\to\openwebui-supplychain-demo\gsc_function_app"
-.\package_for_portal.ps1
-```
-
-The generated ZIP is written to:
-
-```text
-gsc_function_app\dist\gsc_function_app_portal.zip
-```
-
-That ZIP should contain these files at the ZIP root, not nested under another folder:
-
-```text
-function_app.py
-host.json
-requirements.txt
-```
+The `--build remote` flag is critical — it triggers Oryx to run `pip install -r requirements.txt` on the Azure Linux host, ensuring native packages like `psycopg[binary]` are compiled for the correct platform.
 
 ## Create and deploy a new Function App from VS Code
 
@@ -136,8 +121,8 @@ VS Code then prompts you to pick the target Function App and confirm overwrite f
 
 ```powershell
 az functionapp function list `
-  --name funciton-app-shiv-gsc-test `
-  --resource-group funciton-app-shiv-gsc-test_group `
+  --name func-app-gsc-3 `
+  --resource-group func-app-gsc-3_group `
   --output table
 ```
 
@@ -145,20 +130,20 @@ az functionapp function list `
 
 ```powershell
 $cleanOneKey = az functionapp function keys list `
-  --name funciton-app-shiv-gsc-test `
-  --resource-group funciton-app-shiv-gsc-test_group `
+  --name func-app-gsc-3 `
+  --resource-group func-app-gsc-3_group `
   --function-name clean_one_gsc_blob `
   --query default `
   --output tsv
 
-$cleanOneUrl = "https://funciton-app-shiv-gsc-test.azurewebsites.us/api/admin/clean-one?code=$cleanOneKey"
+$cleanOneUrl = "https://func-app-gsc-3.azurewebsites.us/api/gsc/clean-one?code=$cleanOneKey"
 
 Invoke-RestMethod `
   -Method Post `
   -Uri $cleanOneUrl `
   -ContentType "application/json" `
   -Body (@{
-    blob = "path/to/example.aspx"
+    blob = "1.-Definitions.aspx"
   } | ConvertTo-Json)
 ```
 
@@ -166,20 +151,20 @@ Invoke-RestMethod `
 
 ```powershell
 $embedOneKey = az functionapp function keys list `
-  --name funciton-app-shiv-gsc-test `
-  --resource-group funciton-app-shiv-gsc-test_group `
+  --name func-app-gsc-3 `
+  --resource-group func-app-gsc-3_group `
   --function-name embed_one_cleaned_blob `
   --query default `
   --output tsv
 
-$embedOneUrl = "https://funciton-app-shiv-gsc-test.azurewebsites.us/api/admin/embed-one?code=$embedOneKey"
+$embedOneUrl = "https://func-app-gsc-3.azurewebsites.us/api/gsc/embed-one?code=$embedOneKey"
 
 Invoke-RestMethod `
   -Method Post `
   -Uri $embedOneUrl `
   -ContentType "application/json" `
   -Body (@{
-    blob = "path/to/example.txt"
+    blob = "1.-Definitions.txt"
   } | ConvertTo-Json)
 ```
 
@@ -187,20 +172,20 @@ Invoke-RestMethod `
 
 ```powershell
 $processOneKey = az functionapp function keys list `
-  --name funciton-app-shiv-gsc-test `
-  --resource-group funciton-app-shiv-gsc-test_group `
+  --name func-app-gsc-3 `
+  --resource-group func-app-gsc-3_group `
   --function-name process_one_gsc_blob `
   --query default `
   --output tsv
 
-$processOneUrl = "https://funciton-app-shiv-gsc-test.azurewebsites.us/api/admin/process-one?code=$processOneKey"
+$processOneUrl = "https://func-app-gsc-3.azurewebsites.us/api/gsc/process-one?code=$processOneKey"
 
 Invoke-RestMethod `
   -Method Post `
   -Uri $processOneUrl `
   -ContentType "application/json" `
   -Body (@{
-    blob = "path/to/example.aspx"
+    blob = "1.-Definitions.aspx"
     embed = $true
   } | ConvertTo-Json)
 ```
@@ -209,13 +194,13 @@ Invoke-RestMethod `
 
 ```powershell
 $cleanBatchKey = az functionapp function keys list `
-  --name funciton-app-shiv-gsc-test `
-  --resource-group funciton-app-shiv-gsc-test_group `
+  --name func-app-gsc-3 `
+  --resource-group func-app-gsc-3_group `
   --function-name clean_gsc_batch `
   --query default `
   --output tsv
 
-$cleanBatchUrl = "https://funciton-app-shiv-gsc-test.azurewebsites.us/api/admin/clean-batch?code=$cleanBatchKey"
+$cleanBatchUrl = "https://func-app-gsc-3.azurewebsites.us/api/gsc/clean-batch?code=$cleanBatchKey"
 
 Invoke-RestMethod `
   -Method Post `
@@ -231,13 +216,13 @@ Invoke-RestMethod `
 
 ```powershell
 $embedBatchKey = az functionapp function keys list `
-  --name funciton-app-shiv-gsc-test `
-  --resource-group funciton-app-shiv-gsc-test_group `
+  --name func-app-gsc-3 `
+  --resource-group func-app-gsc-3_group `
   --function-name embed_cleaned_batch `
   --query default `
   --output tsv
 
-$embedBatchUrl = "https://funciton-app-shiv-gsc-test.azurewebsites.us/api/admin/embed-batch?code=$embedBatchKey"
+$embedBatchUrl = "https://func-app-gsc-3.azurewebsites.us/api/gsc/embed-batch?code=$embedBatchKey"
 
 Invoke-RestMethod `
   -Method Post `
@@ -253,13 +238,13 @@ Invoke-RestMethod `
 
 ```powershell
 $processBatchKey = az functionapp function keys list `
-  --name funciton-app-shiv-gsc-test `
-  --resource-group funciton-app-shiv-gsc-test_group `
+  --name func-app-gsc-3 `
+  --resource-group func-app-gsc-3_group `
   --function-name process_gsc_batch `
   --query default `
   --output tsv
 
-$processBatchUrl = "https://funciton-app-shiv-gsc-test.azurewebsites.us/api/admin/process-batch?code=$processBatchKey"
+$processBatchUrl = "https://func-app-gsc-3.azurewebsites.us/api/gsc/process-batch?code=$processBatchKey"
 
 Invoke-RestMethod `
   -Method Post `
@@ -276,11 +261,13 @@ Invoke-RestMethod `
 
 ### Functions do not appear after deploy
 
-- If you deployed the repo root, redeploy using only the `gsc_function_app` contents.
-- Confirm the deploy was run from the `gsc_function_app` folder.
+- Confirm `AzureWebJobsFeatureFlags` is set to `EnableWorkerIndexing` in Azure Portal app settings.
+- Confirm `FUNCTIONS_WORKER_RUNTIME` is set to `python`.
+- Confirm the deploy was run from the `gsc_function_app` folder with `--build remote --python`.
+- Check Kudu (Advanced Tools > Debug console) to verify `.python_packages` exists in `site/wwwroot`.
 - Run `az functionapp function list` after deployment completes and trigger sync finishes.
-- Check streaming logs with `func azure functionapp logstream funciton-app-shiv-gsc-test --management-url https://management.usgovcloudapi.net`.
-- Use `GET /api/admin/health` to confirm required app settings and dependency access.
+- Check streaming logs with `func azure functionapp logstream func-app-gsc-3 --management-url https://management.usgovcloudapi.net`.
+- Use `GET /api/gsc/health` to confirm required app settings and dependency access.
 
 ### Check package layout after deploy
 
@@ -303,7 +290,7 @@ Invoke-RestMethod `
 
 ### PostgreSQL connection errors
 
-- Verify `PGVECTOR_DATABASE_URL` is present and valid.
+- Verify `PGVECTOR_DATABASE_URL` is present and valid (check for typos in the hostname).
 - Confirm the database allows the Function App outbound network path.
 - Ensure the target role can create `vector` and `pgcrypto` extensions and can create the target table and indexes.
 
