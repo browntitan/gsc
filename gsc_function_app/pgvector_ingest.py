@@ -38,7 +38,7 @@ class Settings:
     embedding_api_key: str
     embedding_deployment: str
     embedding_path: str = "/embeddings"
-    api_version: str = "2024-02-01"
+    api_version: str = "2024-02-15-preview"
     embedding_dimensions: int = 1536
     request_timeout_seconds: int = 120
     chunk_size: int = 120
@@ -78,7 +78,7 @@ def load_settings() -> Settings:
         embedding_api_key=require_env("AZURE_OPENAI_API_KEY"),
         embedding_deployment=os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-ada-002"),
         embedding_path=os.getenv("AZURE_OPENAI_EMBEDDINGS_PATH", "/embeddings"),
-        api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01"),
+        api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview"),
         embedding_dimensions=parse_int_env("EMBEDDING_DIMENSIONS", 1536),
         request_timeout_seconds=parse_int_env("REQUEST_TIMEOUT_SECONDS", 120),
         chunk_size=parse_int_env("CHUNK_SIZE", 120),
