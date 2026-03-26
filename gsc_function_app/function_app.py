@@ -15,12 +15,12 @@ STORAGE_SETTING = "cdooaipocdata1_STORAGE"
 SOURCE_CONTAINER = "gsc"
 CLEANED_CONTAINER = os.getenv("OUTPUT_CONTAINER", "gsc-cleaned")
 
-REQUIRED_ENV_VARS = (
-    STORAGE_SETTING,
-    "PGVECTOR_DATABASE_URL",
-    "AZURE_OPENAI_BASE_URL",
-    "AZURE_OPENAI_API_KEY",
-)
+REQUIRED_ENV_VARS = {
+    STORAGE_SETTING: (STORAGE_SETTING,),
+    "PGVECTOR_DATABASE_URL": ("PGVECTOR_DATABASE_URL", "PG_CONNECTION_STRING"),
+    "AZURE_OPENAI_BASE_URL": ("AZURE_OPENAI_BASE_URL", "AZURE_OPENAI_ENDPOINT"),
+    "AZURE_OPENAI_API_KEY": ("AZURE_OPENAI_API_KEY",),
+}
 
 
 class BlobSourceNotFoundError(FileNotFoundError):
@@ -122,6 +122,14 @@ def get_blob_service() -> BlobServiceClient:
     if not connection_string:
         raise RuntimeError(f"Missing required app setting: {STORAGE_SETTING}")
     return BlobServiceClient.from_connection_string(connection_string)
+
+
+def first_present_env(*names: str) -> Optional[str]:
+    for name in names:
+        value = os.getenv(name)
+        if value and value.strip():
+            return name
+    return None
 
 
 def load_cleaner() -> Any:
@@ -693,7 +701,17 @@ def health_check(req: func.HttpRequest) -> func.HttpResponse:
     del req
 
     env_report = {
-        "required": {name: {"present": bool(os.getenv(name))} for name in REQUIRED_ENV_VARS},
+        "required": {
+            canonical_name: {
+                "present": first_present_env(*env_names) is not None,
+                **(
+                    {"resolved_from": resolved_name}
+                    if (resolved_name := first_present_env(*env_names)) is not None
+                    else {}
+                ),
+            }
+            for canonical_name, env_names in REQUIRED_ENV_VARS.items()
+        },
         "defaults": {
             "OUTPUT_CONTAINER": CLEANED_CONTAINER,
             "CHUNK_TABLE_NAME": os.getenv("CHUNK_TABLE_NAME", "gsc_vector_rag"),
@@ -704,6 +722,9 @@ def health_check(req: func.HttpRequest) -> func.HttpResponse:
             ),
             "AZURE_OPENAI_EMBEDDINGS_PATH": os.getenv("AZURE_OPENAI_EMBEDDINGS_PATH", "/embeddings"),
             "EMBEDDING_DIMENSIONS": os.getenv("EMBEDDING_DIMENSIONS", "1536"),
+            "EMBEDDING_BATCH_SIZE": os.getenv("EMBEDDING_BATCH_SIZE", "16"),
+            "EMBEDDING_MAX_RETRIES": os.getenv("EMBEDDING_MAX_RETRIES", "3"),
+            "EMBEDDING_RETRY_DELAY_SECONDS": os.getenv("EMBEDDING_RETRY_DELAY_SECONDS", "5"),
             "REQUEST_TIMEOUT_SECONDS": os.getenv("REQUEST_TIMEOUT_SECONDS", "120"),
             "CHUNK_SIZE": os.getenv("CHUNK_SIZE", "120"),
             "CHUNK_OVERLAP": os.getenv("CHUNK_OVERLAP", "20"),

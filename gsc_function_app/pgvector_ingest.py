@@ -3,8 +3,10 @@ from __future__ import annotations
 import hashlib
 import html
 import json
+import logging
 import os
 import re
+import time
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 import httpx
@@ -40,6 +42,9 @@ class Settings:
     embedding_path: str = "/embeddings"
     api_version: str = "2024-02-15-preview"
     embedding_dimensions: int = 1536
+    embedding_batch_size: int = 16
+    embedding_max_retries: int = 3
+    embedding_retry_delay_seconds: int = 5
     request_timeout_seconds: int = 120
     chunk_size: int = 120
     chunk_overlap: int = 20
@@ -59,6 +64,15 @@ def require_env(name: str) -> str:
     return value
 
 
+def require_env_any(*names: str) -> str:
+    for name in names:
+        value = clean_optional(os.getenv(name))
+        if value is not None:
+            return value
+    joined_names = ", ".join(names)
+    raise RuntimeError(f"Missing required app setting. Expected one of: {joined_names}")
+
+
 def parse_int_env(name: str, default: int) -> int:
     value = clean_optional(os.getenv(name))
     if value is None:
@@ -71,15 +85,18 @@ def parse_int_env(name: str, default: int) -> int:
 
 def load_settings() -> Settings:
     return Settings(
-        database_url=require_env("PGVECTOR_DATABASE_URL"),
+        database_url=require_env_any("PGVECTOR_DATABASE_URL", "PG_CONNECTION_STRING"),
         chunk_table_name=os.getenv("CHUNK_TABLE_NAME", "gsc_vector_rag"),
         collection_name=os.getenv("COLLECTION_NAME", "gsc-internal-policies"),
-        embedding_base_url=require_env("AZURE_OPENAI_BASE_URL"),
+        embedding_base_url=require_env_any("AZURE_OPENAI_BASE_URL", "AZURE_OPENAI_ENDPOINT"),
         embedding_api_key=require_env("AZURE_OPENAI_API_KEY"),
         embedding_deployment=os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-ada-002"),
         embedding_path=os.getenv("AZURE_OPENAI_EMBEDDINGS_PATH", "/embeddings"),
         api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview"),
         embedding_dimensions=parse_int_env("EMBEDDING_DIMENSIONS", 1536),
+        embedding_batch_size=parse_int_env("EMBEDDING_BATCH_SIZE", 16),
+        embedding_max_retries=parse_int_env("EMBEDDING_MAX_RETRIES", 3),
+        embedding_retry_delay_seconds=parse_int_env("EMBEDDING_RETRY_DELAY_SECONDS", 5),
         request_timeout_seconds=parse_int_env("REQUEST_TIMEOUT_SECONDS", 120),
         chunk_size=parse_int_env("CHUNK_SIZE", 120),
         chunk_overlap=parse_int_env("CHUNK_OVERLAP", 20),
@@ -111,7 +128,7 @@ def get_connection(database_url: str) -> psycopg.Connection:
 
 
 def check_database_connection() -> Dict[str, Any]:
-    database_url = require_env("PGVECTOR_DATABASE_URL")
+    database_url = require_env_any("PGVECTOR_DATABASE_URL", "PG_CONNECTION_STRING")
     chunk_table_name = os.getenv("CHUNK_TABLE_NAME", "gsc_vector_rag")
     collection_name = os.getenv("COLLECTION_NAME", "gsc-internal-policies")
 
@@ -256,9 +273,7 @@ def upsert_rows(database_url: str, table_name: str, rows: Iterable[Dict[str, Any
     return count
 
 
-def embed_text(text: str, settings: Settings) -> List[float]:
-    import logging
-
+def _build_embeddings_client(settings: Settings) -> Tuple[httpx.Client, AzureOpenAIEmbeddings]:
     # Set env vars for langchain/openai SDK auto-resolution
     # This matches the coworker's working pattern — do NOT pass azure_endpoint
     # or api_key explicitly to the constructor, let the SDK resolve from env vars
@@ -273,20 +288,101 @@ def embed_text(text: str, settings: Settings) -> List[float]:
     )
 
     httpx_client = httpx.Client(http2=True, verify=False, timeout=settings.request_timeout_seconds)
-    embeddings = AzureOpenAIEmbeddings(
+    return httpx_client, AzureOpenAIEmbeddings(
         azure_deployment=settings.embedding_deployment,
         api_version=settings.api_version,
         http_client=httpx_client,
     )
 
-    vector = embeddings.embed_query(text)
 
+def _validate_embedding_dimensions(vectors: List[List[float]], settings: Settings) -> None:
+    for index, vector in enumerate(vectors, start=1):
+        if len(vector) != settings.embedding_dimensions:
+            raise RuntimeError(
+                "Embedding dimension mismatch for item "
+                f"{index}: expected {settings.embedding_dimensions}, got {len(vector)}"
+            )
+
+
+def _is_retryable_embedding_error(exc: Exception) -> bool:
+    if isinstance(exc, httpx.TimeoutException):
+        return True
+    if isinstance(exc, httpx.TransportError):
+        return True
+
+    message = str(exc).lower()
+    retry_markers = (
+        "429",
+        "rate limit",
+        "timeout",
+        "timed out",
+        "temporarily unavailable",
+        "connection reset",
+        "connection aborted",
+        "server disconnected",
+        "502",
+        "503",
+        "504",
+    )
+    return any(marker in message for marker in retry_markers)
+
+
+def embed_texts(texts: List[str], settings: Settings) -> List[List[float]]:
+    if not texts:
+        return []
+
+    batch_size = max(1, settings.embedding_batch_size)
+    total_batches = (len(texts) + batch_size - 1) // batch_size
+
+    httpx_client, embeddings = _build_embeddings_client(settings)
+    try:
+        all_vectors: List[List[float]] = []
+        for batch_number, start in enumerate(range(0, len(texts), batch_size), start=1):
+            batch_texts = texts[start : start + batch_size]
+
+            for attempt in range(1, settings.embedding_max_retries + 1):
+                try:
+                    logging.info(
+                        "Embedding batch %d/%d with %d chunks",
+                        batch_number,
+                        total_batches,
+                        len(batch_texts),
+                    )
+                    vectors = embeddings.embed_documents(batch_texts)
+                    if len(vectors) != len(batch_texts):
+                        raise RuntimeError(
+                            "Embedding result count mismatch: "
+                            f"expected {len(batch_texts)}, got {len(vectors)}"
+                        )
+                    _validate_embedding_dimensions(vectors, settings)
+                    all_vectors.extend(vectors)
+                    break
+                except Exception as exc:  # noqa: BLE001
+                    retryable = _is_retryable_embedding_error(exc)
+                    if attempt >= settings.embedding_max_retries or not retryable:
+                        raise
+
+                    delay = settings.embedding_retry_delay_seconds * (2 ** (attempt - 1))
+                    logging.warning(
+                        "Embedding batch %d/%d failed on attempt %d/%d: %s. Retrying in %s seconds",
+                        batch_number,
+                        total_batches,
+                        attempt,
+                        settings.embedding_max_retries,
+                        exc,
+                        delay,
+                    )
+                    time.sleep(delay)
+
+        return all_vectors
+    finally:
+        httpx_client.close()
+
+
+def embed_text(text: str, settings: Settings) -> List[float]:
+    vectors = embed_texts([text], settings)
+    vector = vectors[0]
     logging.info("embed_text: received vector with %d dimensions", len(vector))
-
-    if len(vector) != settings.embedding_dimensions:
-        raise RuntimeError(
-            f"Embedding dimension mismatch: expected {settings.embedding_dimensions}, got {len(vector)}"
-        )
     return vector
 
 
@@ -680,10 +776,16 @@ def ingest_cleaned_text(source_name: str, raw_text: str) -> Dict[str, Any]:
 
     ensure_schema(settings.database_url, settings.chunk_table_name, settings.embedding_dimensions)
 
-    embedded_rows = []
-    for row in rows:
-        embedding = embed_text(row["chunk_text"], settings)
-        embedded_rows.append({**row, "embedding": embedding})
+    chunk_texts = [row["chunk_text"] for row in rows]
+    embeddings = embed_texts(chunk_texts, settings)
+    if len(embeddings) != len(rows):
+        raise RuntimeError(
+            f"Embedding result count mismatch: expected {len(rows)}, got {len(embeddings)}"
+        )
+
+    # Keep the existing row metadata and identifiers unchanged while swapping in
+    # a more reliable embedding transport.
+    embedded_rows = [{**row, "embedding": embedding} for row, embedding in zip(rows, embeddings)]
 
     report["rows_written"] = upsert_rows(
         settings.database_url,
