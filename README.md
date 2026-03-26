@@ -40,19 +40,17 @@ Seeding:
 
 ## LLM-First Input Extraction
 
-The pipeline defaults to LLM-first extraction and formatting for input understanding.
+The pipeline defaults to Azure OpenAI-backed extraction and formatting for input understanding.
 
 Default behavior:
 
 - `ROUTER_MODE=extractor_assisted`
 - `ENABLE_LLM_EXTRACTOR=true`
 - `ENABLE_LLM_FORMATTER=true`
-- `ANSWER_PROVIDER=ollama`
-- `ANSWER_MODEL=gpt-oss:20b`
-- `EXTRACTOR_PROVIDER=ollama`
-- `EXTRACTOR_MODEL=gpt-oss:20b`
-- `FORMATTER_PROVIDER=ollama`
-- `FORMATTER_MODEL=gpt-oss:20b`
+- `AZURE_OPENAI_API_VERSION=2024-02-01`
+- `AZURE_OPENAI_DEPLOYMENT_NAME=<chat-deployment>`
+- `AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME=<ada-embedding-deployment>`
+- `EMBEDDING_DIMENSIONS=1536`
 
 The pipeline still keeps deterministic parsing as fallback and validation. It normalizes:
 
@@ -62,7 +60,7 @@ The pipeline still keeps deterministic parsing as fallback and validation. It no
 
 The chat runtime uses `termset` as the primary user-facing term, but it still accepts legacy `T&C` phrasing as an alias.
 
-Embedding stays on the Ollama embedding model `nomic-embed-text`. I verified that local Ollama returns `this model does not support embeddings` for `gpt-oss:20b`, so using it as the embedding default would break ingestion and retrieval.
+Query embeddings now come from Azure OpenAI using a separate embedding deployment. The pipeline assumes ada-style 1536-dimensional vectors, so the stored pgvector collection must be seeded with the same embedding family.
 
 ## Local Quick Start
 
@@ -88,7 +86,25 @@ You should see:
 
 - `supplychain_tc_pipeline`
 
+Before sending chat queries, set the pipeline valves for:
+
+- `DATABASE_URL`
+- `AZURE_OPENAI_ENDPOINT`
+- `AZURE_OPENAI_API_KEY`
+- `AZURE_OPENAI_DEPLOYMENT_NAME`
+- `AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME`
+- `AZURE_OPENAI_API_VERSION`
+
 ### 3. Seed the internal policy collection
+
+Before seeding, set the Azure embedding environment variables used by the script:
+
+```bash
+export AZURE_OPENAI_ENDPOINT="https://<resource>.openai.azure.us"
+export AZURE_OPENAI_API_KEY="<api-key>"
+export AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME="<ada-embedding-deployment>"
+export AZURE_OPENAI_API_VERSION="2024-02-01"
+```
 
 ```bash
 python scripts/ingest_supply_chain_txt.py \
@@ -101,6 +117,7 @@ python scripts/ingest_supply_chain_txt.py \
 This:
 
 - parses the clause files in `demo-data/`
+- embeds them with Azure OpenAI using `AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME`
 - writes the new collection `GSC-Internal-Policy`
 - removes the old local demo collection `supply_chain_tcs_demo`
 
@@ -154,8 +171,8 @@ Expected local result after reseeding:
 
 - `collection_name = GSC-Internal-Policy`
 - `row_count > 0`
-- `min_dims = 768`
-- `max_dims = 768`
+- `min_dims = 1536`
+- `max_dims = 1536`
 
 ### Check clause/termset coverage
 
@@ -192,8 +209,9 @@ curl -sS -X POST \
 
 For enterprise deployment:
 
-- point the pipeline valves at the enterprise Postgres database
-- seed the target collection with `scripts/ingest_supply_chain_txt.py`
+- point `DATABASE_URL` at the Azure Gov Postgres database
+- set `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_DEPLOYMENT_NAME`, `AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME`, and `AZURE_OPENAI_API_VERSION`
+- seed the target collection with `scripts/ingest_supply_chain_txt.py` using the same Azure embedding deployment family
 - connect Open WebUI to the Pipelines endpoint
 - keep the same table shape and the same collection model
 
@@ -207,11 +225,14 @@ The important runtime knobs are:
 - `ROUTER_MODE`
 - `ENABLE_LLM_EXTRACTOR`
 - `ENABLE_LLM_FORMATTER`
-- `EXTRACTOR_PROVIDER`
-- `EXTRACTOR_MODEL`
-- `FORMATTER_PROVIDER`
-- `FORMATTER_MODEL`
-- `ANSWER_PROVIDER`
-- `EMBEDDING_PROVIDER`
+- `EXTRACTOR_TIMEOUT_SECONDS`
+- `ENABLE_ANSWERABILITY_CHECK`
+- `ANSWERABILITY_TIMEOUT_SECONDS`
+- `EMBEDDING_DIMENSIONS`
+- `AZURE_OPENAI_API_KEY`
+- `AZURE_OPENAI_ENDPOINT`
+- `AZURE_OPENAI_DEPLOYMENT_NAME`
+- `AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME`
+- `AZURE_OPENAI_API_VERSION`
 
 See `CONFIG_REFERENCE.md` for the full list.

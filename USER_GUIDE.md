@@ -34,19 +34,17 @@ All of those normalize to the same stored termset value: `002`.
 
 ## LLM-First Extraction
 
-The input-understanding path is LLM-first by default.
+The input-understanding path is Azure OpenAI-backed by default.
 
 Defaults:
 
 - `ROUTER_MODE=extractor_assisted`
 - `ENABLE_LLM_EXTRACTOR=true`
 - `ENABLE_LLM_FORMATTER=true`
-- `ANSWER_PROVIDER=ollama`
-- `ANSWER_MODEL=gpt-oss:20b`
-- `EXTRACTOR_PROVIDER=ollama`
-- `EXTRACTOR_MODEL=gpt-oss:20b`
-- `FORMATTER_PROVIDER=ollama`
-- `FORMATTER_MODEL=gpt-oss:20b`
+- `AZURE_OPENAI_API_VERSION=2024-02-01`
+- `AZURE_OPENAI_DEPLOYMENT_NAME=<chat-deployment>`
+- `AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME=<ada-embedding-deployment>`
+- `EMBEDDING_DIMENSIONS=1536`
 
 The flow is:
 
@@ -59,7 +57,16 @@ The flow is:
 
 If the extractor or formatter fails, the pipeline falls back to deterministic parsing or a missing-field prompt.
 
-Embedding still uses `OLLAMA_EMBED_MODEL=nomic-embed-text`. In local testing, Ollama returned `this model does not support embeddings` for `gpt-oss:20b`, so the embedding default cannot safely be switched to that model.
+Query embeddings come from Azure OpenAI using the separate embedding deployment valve. The stored collection must use the same 1536-dimensional embedding family for retrieval to work.
+
+Before the first query, populate these valves:
+
+- `DATABASE_URL`
+- `AZURE_OPENAI_ENDPOINT`
+- `AZURE_OPENAI_API_KEY`
+- `AZURE_OPENAI_DEPLOYMENT_NAME`
+- `AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME`
+- `AZURE_OPENAI_API_VERSION`
 
 ## Example Chat Behavior
 
@@ -138,6 +145,11 @@ The seeding path is separate from the chat runtime.
 Use:
 
 ```bash
+export AZURE_OPENAI_ENDPOINT="https://<resource>.openai.azure.us"
+export AZURE_OPENAI_API_KEY="<api-key>"
+export AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME="<ada-embedding-deployment>"
+export AZURE_OPENAI_API_VERSION="2024-02-01"
+
 python scripts/ingest_supply_chain_txt.py \
   --input-path demo-data \
   --collection-name GSC-Internal-Policy \
@@ -153,7 +165,7 @@ The seed script:
 - normalizes termsets to three digits
 - removes structural boilerplate before chunking
 - duplicates chunks once per applicable termset
-- embeds each chunk
+- embeds each chunk with Azure OpenAI
 - writes the results into `supply_chain_chunks`
 
 ## What Metadata Is Stored
@@ -252,25 +264,25 @@ Check:
 
 ### Provider failures
 
-Only the active provider settings are required.
+This pipeline is Azure OpenAI only.
 
-If using Ollama:
+Check:
 
-- keep `ANSWER_PROVIDER=ollama`
-- keep `EMBEDDING_PROVIDER=ollama`
-- Azure fields may stay blank
-
-If using Azure OpenAI:
-
-- set the Azure base URL, API key, and model names
-- Ollama-specific values may stay unused
+- `AZURE_OPENAI_ENDPOINT`
+- `AZURE_OPENAI_API_KEY`
+- `AZURE_OPENAI_DEPLOYMENT_NAME`
+- `AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME`
+- `AZURE_OPENAI_API_VERSION`
+- `DATABASE_URL`
+- seeded vectors are 1536-dimensional and were written with the same Azure embedding deployment family
 
 ## Enterprise Target Pattern
 
 This repo is structured so the same pieces can be moved to an enterprise Azure deployment:
 
 - upload `pipelines/supplychain_tc_pipeline.py` to the enterprise Pipelines service
-- point the valves at the enterprise Postgres database
+- point `DATABASE_URL` at the enterprise Azure Gov Postgres database
+- point the Azure OpenAI valves at the Azure Gov OpenAI resource and deployments
 - run `scripts/ingest_supply_chain_txt.py` against the enterprise database
 - keep the same `collection_name` model for isolation
 

@@ -46,38 +46,32 @@ def clean_optional(value: Optional[str]) -> Optional[str]:
     return cleaned or None
 
 
-def resolve_provider(value: str) -> str:
-    raw = clean_optional(value) or "ollama"
-    normalized = raw.lower().replace("-", "_").replace(" ", "_")
-    aliases = {
-        "ollama": "ollama",
-        "azure_openai": "azure_openai",
-        "azure": "azure_openai",
-        "openai_azure": "azure_openai",
-    }
-    provider = aliases.get(normalized)
-    if not provider:
-        raise RuntimeError(f"Unsupported embedding provider '{raw}'. Use 'ollama' or 'azure_openai'.")
-    return provider
+def require_config(value: Optional[str], name: str) -> str:
+    cleaned = clean_optional(value)
+    if not cleaned:
+        raise RuntimeError(f"{name} must be set")
+    return cleaned
 
 
-def resolve_embedding_model(args: argparse.Namespace, provider: str) -> str:
-    explicit = clean_optional(args.embedding_model)
-    if explicit:
-        return explicit
-    if provider == "ollama":
-        model = clean_optional(args.ollama_embed_model)
-        if model:
-            return model
-        raise RuntimeError("OLLAMA_EMBED_MODEL or --embedding-model must be set when using ollama")
-    if provider == "azure_openai":
-        model = clean_optional(args.azure_openai_embed_model)
-        if model:
-            return model
+def azure_endpoint_root(value: str) -> str:
+    endpoint = require_config(value, "AZURE_OPENAI_ENDPOINT")
+    if "/openai/" in endpoint.lower():
         raise RuntimeError(
-            "AZURE_OPENAI_EMBED_MODEL or --embedding-model must be set when using azure_openai"
+            "AZURE_OPENAI_ENDPOINT must be the endpoint root, not a pre-expanded /openai/ URL"
         )
-    raise RuntimeError(f"Unsupported embedding provider: {provider}")
+    return endpoint.rstrip("/")
+
+
+def azure_embedding_url(args: argparse.Namespace) -> str:
+    deployment = require_config(
+        args.azure_openai_embedding_deployment_name,
+        "AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME",
+    )
+    api_version = require_config(args.azure_openai_api_version, "AZURE_OPENAI_API_VERSION")
+    return (
+        f"{azure_endpoint_root(args.azure_openai_endpoint)}/openai/deployments/{deployment}/embeddings"
+        f"?api-version={api_version}"
+    )
 
 
 def normalize_identifier(value: str) -> str:
@@ -258,77 +252,24 @@ def post_json(
     with request.urlopen(req, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
 
-
-def ollama_url_candidates(base_url: str) -> List[str]:
-    urls = [base_url.rstrip("/")]
-    if "host.docker.internal" in base_url:
-        urls.append(base_url.replace("host.docker.internal", "localhost").rstrip("/"))
-    elif "localhost" in base_url:
-        urls.append(base_url.replace("localhost", "host.docker.internal").rstrip("/"))
-    deduped = []
-    for url in urls:
-        if url not in deduped:
-            deduped.append(url)
-    return deduped
-
-
 def embed_text(text: str, args: argparse.Namespace) -> List[float]:
-    provider = resolve_provider(args.embedding_provider)
-    model = resolve_embedding_model(args, provider)
-
-    if provider == "ollama":
-        last_exc: Optional[Exception] = None
-        payload = {
-            "model": model,
-            "input": text,
-            "truncate": True,
-            "dimensions": args.embedding_dimensions,
-        }
-        for base_url in ollama_url_candidates(args.ollama_base_url):
-            try:
-                response = post_json(
-                    f"{base_url}/api/embed",
-                    payload,
-                    timeout=args.request_timeout_seconds,
-                )
-                embeddings = response.get("embeddings") or []
-                if not embeddings:
-                    raise RuntimeError("Ollama returned no embeddings")
-                vector = embeddings[0]
-                if len(vector) != args.embedding_dimensions:
-                    raise RuntimeError(
-                        f"Embedding dimension mismatch: expected {args.embedding_dimensions}, got {len(vector)}"
-                    )
-                return vector
-            except Exception as exc:  # noqa: BLE001
-                last_exc = exc
-        raise RuntimeError(f"Failed to embed with Ollama: {last_exc}") from last_exc
-
-    if provider == "azure_openai":
-        if not args.azure_openai_base_url or not args.azure_openai_api_key:
-            raise RuntimeError("Azure OpenAI embedding mode requires AZURE_OPENAI_BASE_URL and AZURE_OPENAI_API_KEY")
-        payload = {
-            "model": model,
-            "input": text,
-            "dimensions": args.embedding_dimensions,
-        }
-        response = post_json(
-            args.azure_openai_base_url.rstrip("/") + "/embeddings",
-            payload,
-            headers={"api-key": args.azure_openai_api_key},
-            timeout=args.request_timeout_seconds,
+    response = post_json(
+        azure_embedding_url(args),
+        {"input": text},
+        headers={
+            "api-key": require_config(args.azure_openai_api_key, "AZURE_OPENAI_API_KEY"),
+        },
+        timeout=args.request_timeout_seconds,
+    )
+    data = response.get("data") or []
+    if not data or "embedding" not in data[0]:
+        raise RuntimeError("Azure OpenAI returned no embeddings")
+    vector = data[0]["embedding"]
+    if len(vector) != args.embedding_dimensions:
+        raise RuntimeError(
+            f"Embedding dimension mismatch: expected {args.embedding_dimensions}, got {len(vector)}"
         )
-        data = response.get("data") or []
-        if not data or "embedding" not in data[0]:
-            raise RuntimeError("Azure OpenAI returned no embeddings")
-        vector = data[0]["embedding"]
-        if len(vector) != args.embedding_dimensions:
-            raise RuntimeError(
-                f"Embedding dimension mismatch: expected {args.embedding_dimensions}, got {len(vector)}"
-            )
-        return vector
-
-    raise RuntimeError(f"Unsupported embedding provider: {args.embedding_provider}")
+    return vector
 
 
 def collect_txt_files(input_path: Path) -> List[Path]:
@@ -717,7 +658,7 @@ def build_rows_for_file(path: Path, args: argparse.Namespace) -> Tuple[List[Dict
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Seed internal policy clause .txt files into pgvector."
+        description="Seed internal policy clause .txt files into pgvector using Azure OpenAI embeddings."
     )
     parser.add_argument("--input-path", required=True, help="Path to a clause .txt file or directory of clause .txt files.")
     parser.add_argument(
@@ -736,35 +677,15 @@ def parse_args() -> argparse.Namespace:
         help="Chunk table name.",
     )
     parser.add_argument(
-        "--embedding-provider",
-        default=os.getenv("EMBEDDING_PROVIDER", "ollama"),
-        help="Embedding provider: ollama or azure_openai.",
-    )
-    parser.add_argument(
-        "--embedding-model",
-        default=os.getenv("EMBEDDING_MODEL", ""),
-        help="Optional generic embedding model override. Leave blank to use the provider-specific default.",
-    )
-    parser.add_argument(
         "--embedding-dimensions",
         type=int,
-        default=int(os.getenv("EMBEDDING_DIMENSIONS", os.getenv("AZURE_OPENAI_EMBED_DIMENSIONS", "768"))),
+        default=int(os.getenv("EMBEDDING_DIMENSIONS", "1536")),
         help="Embedding dimensions.",
     )
     parser.add_argument(
-        "--ollama-base-url",
-        default=os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434"),
-        help="Base URL for Ollama embeddings.",
-    )
-    parser.add_argument(
-        "--ollama-embed-model",
-        default=os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text"),
-        help="Default Ollama embedding model when --embedding-model is blank.",
-    )
-    parser.add_argument(
-        "--azure-openai-base-url",
-        default=os.getenv("AZURE_OPENAI_BASE_URL", ""),
-        help="Azure OpenAI base URL.",
+        "--azure-openai-endpoint",
+        default=os.getenv("AZURE_OPENAI_ENDPOINT", ""),
+        help="Azure OpenAI endpoint root, for example https://<resource>.openai.azure.us.",
     )
     parser.add_argument(
         "--azure-openai-api-key",
@@ -772,9 +693,14 @@ def parse_args() -> argparse.Namespace:
         help="Azure OpenAI API key.",
     )
     parser.add_argument(
-        "--azure-openai-embed-model",
-        default=os.getenv("AZURE_OPENAI_EMBED_MODEL", ""),
-        help="Default Azure OpenAI embedding model when --embedding-model is blank.",
+        "--azure-openai-embedding-deployment-name",
+        default=os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME", ""),
+        help="Azure OpenAI embedding deployment name.",
+    )
+    parser.add_argument(
+        "--azure-openai-api-version",
+        default=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01"),
+        help="Azure OpenAI API version.",
     )
     parser.add_argument(
         "--request-timeout-seconds",
@@ -854,11 +780,20 @@ def main() -> None:
             Path(args.report_file).write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         return
 
-    ensure_schema(args.database_url, args.chunk_table_name, args.embedding_dimensions)
+    require_config(args.azure_openai_endpoint, "AZURE_OPENAI_ENDPOINT")
+    require_config(args.azure_openai_api_key, "AZURE_OPENAI_API_KEY")
+    require_config(
+        args.azure_openai_embedding_deployment_name,
+        "AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME",
+    )
+    require_config(args.azure_openai_api_version, "AZURE_OPENAI_API_VERSION")
+    database_url = require_config(args.database_url, "DATABASE_URL")
+
+    ensure_schema(database_url, args.chunk_table_name, args.embedding_dimensions)
 
     if args.replace_collection:
         report["rows_deleted"] = delete_collection(
-            args.database_url,
+            database_url,
             args.chunk_table_name,
             args.collection_name,
         )
@@ -869,14 +804,14 @@ def main() -> None:
         embedded_rows.append({**row, "embedding": embedding})
 
     report["rows_written"] = upsert_rows(
-        args.database_url,
+        database_url,
         args.chunk_table_name,
         embedded_rows,
     )
 
     for collection_name in args.delete_collection:
         deleted = delete_collection(
-            args.database_url,
+            database_url,
             args.chunk_table_name,
             collection_name,
         )
