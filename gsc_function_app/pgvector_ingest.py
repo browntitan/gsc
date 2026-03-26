@@ -257,15 +257,32 @@ def upsert_rows(database_url: str, table_name: str, rows: Iterable[Dict[str, Any
 
 
 def embed_text(text: str, settings: Settings) -> List[float]:
+    import logging
+
+    # Set env vars for langchain/openai SDK auto-resolution
+    # This matches the coworker's working pattern — do NOT pass azure_endpoint
+    # or api_key explicitly to the constructor, let the SDK resolve from env vars
+    os.environ["AZURE_OPENAI_API_KEY"] = settings.embedding_api_key
+    os.environ["AZURE_OPENAI_ENDPOINT"] = settings.embedding_base_url
+
+    logging.info(
+        "embed_text: endpoint=%s deployment=%s api_version=%s",
+        settings.embedding_base_url,
+        settings.embedding_deployment,
+        settings.api_version,
+    )
+
     httpx_client = httpx.Client(http2=True, verify=False, timeout=settings.request_timeout_seconds)
     embeddings = AzureOpenAIEmbeddings(
         azure_deployment=settings.embedding_deployment,
-        azure_endpoint=settings.embedding_base_url,
-        api_key=settings.embedding_api_key,
         api_version=settings.api_version,
         http_client=httpx_client,
     )
+
     vector = embeddings.embed_query(text)
+
+    logging.info("embed_text: received vector with %d dimensions", len(vector))
+
     if len(vector) != settings.embedding_dimensions:
         raise RuntimeError(
             f"Embedding dimension mismatch: expected {settings.embedding_dimensions}, got {len(vector)}"
