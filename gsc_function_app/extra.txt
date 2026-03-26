@@ -1,0 +1,9 @@
+SELECT name, default_version, installed_version 
+FROM pg_available_extensions 
+WHERE name IN ('vector', 'pgcrypto')
+ORDER BY name;
+
+SHOW azure.extensions;
+
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
