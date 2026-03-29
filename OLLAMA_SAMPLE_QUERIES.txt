@@ -1,0 +1,105 @@
+Ollama Supply Chain Pipeline Sample Queries
+
+Notes
+- Clause 10 is the best clean section-aware test file for Intent, Common Exceptions / Suggested Responses, and Suggested Responses.
+- Clause 12 is the best broader retrieval test file for warranty-related questions.
+- Supported termset formats include:
+  - termset 3
+  - termet 3
+  - T&C 3
+  - tc 003
+  - CTM-P-ST-003
+
+Single-Turn Queries
+
+General retrieval
+- What does clause 12 say about warranty period for termset 1?
+- What does clause 10 say about indemnity for termset 3?
+- What does clause 12 say about warranty waivers for termset 1?
+- What does clause 12 say about remedies for CTM-P-ST-006?
+
+Intent-focused queries
+- What is the intent of clause 10 for termset 3?
+- Why does clause 10 exist for termset 3?
+- What is this clause for: clause 10 termset 3?
+- What is the purpose of clause 12 for termset 1?
+
+Common exceptions / pushback queries
+- What common exceptions come up for clause 10 termset 3?
+- What supplier pushback is common on clause 10 for termset 3?
+- What common edits come up for clause 12 termset 1?
+- What do suppliers object to in clause 12 for termset 6?
+
+Suggested response queries
+- What are the suggested responses for clause 10 termset 3?
+- How should we respond to pushback on clause 10 termset 3?
+- What should we say about clause 12 termset 1 warranty period?
+- Give me the recommended response for clause 10 termset 4.
+
+Alias / typo-friendly queries
+- What is the intent of clause 10 for T&C 3?
+- What common exceptions come up for clause 10 termet 3?
+- Suggested responses for clause 12 tc 001
+- Clause 10 termset 3 indemnity
+
+No-answer / edge-case tests
+- What does clause 10 say about launch insurance for termset 3?
+- What is the intent of clause 3 for termset 2?
+- What suggested responses are there for clause 12 termset 2 on spacecraft launch warranty?
+
+Longer Multi-Turn Conversation Examples
+
+Conversation 1: Missing termset, then retrieval
+User: What does clause 12 say about warranty period?
+Assistant: I have Clause 12 and your question. Which termset number should I search under?
+User: termset 1
+Assistant: Searches clause 12, termset 001, and answers on warranty period.
+
+Conversation 2: Section-aware clause review
+User: What is the intent of clause 10 for termset 3?
+Assistant: Answers from the Intent section.
+User: What common exceptions come up?
+Assistant: Keeps clause 10 and termset 003, then routes to Common Exceptions / Suggested Responses.
+User: How should we respond to that pushback?
+Assistant: Keeps clause 10 and termset 003, then routes to Suggested Responses.
+User: Can you explain that more?
+Assistant: Keeps the current section focus and explains further.
+
+Conversation 3: Update identifiers, keep the active question
+User: What are the suggested responses for clause 10 for termset 3?
+Assistant: Answers from Suggested Responses.
+User: termset 4
+Assistant: Re-runs the same suggested-responses question for clause 10, termset 004.
+User: Clause 12
+Assistant: Re-runs the same question for clause 12, termset 004.
+
+Conversation 4: Switch from section-specific to general retrieval
+User: What is the intent of clause 12 for termset 1?
+Assistant: Answers from the Intent section.
+User: What common exceptions come up?
+Assistant: Switches to the Common Exceptions / Suggested Responses section.
+User: What does the clause say about warranty period overall?
+Assistant: Clears the old section focus and performs a general clause search.
+User: Can you explain that more?
+Assistant: Follows up on the current general answer.
+
+Conversation 5: Negotiation-style workflow
+User: What common exceptions come up for clause 10 termset 3?
+Assistant: Returns the common supplier pushback points.
+User: Which one is most risky?
+Assistant: Answers from the retrieved evidence.
+User: What should we say if the supplier deletes the duty to defend?
+Assistant: Routes to Suggested Responses and answers from the matching response section.
+User: Give me the short version.
+Assistant: Summarizes the same response more concisely.
+
+Conversation 6: Follow-up with same clause and termset
+User: What does clause 10 say about indemnity for termset 3?
+Assistant: Gives a grounded answer.
+User: Clause 12
+Assistant: Keeps the active query and termset, but changes the clause to 12.
+User: termset 1
+Assistant: Keeps the active query and clause, but changes the termset to 001.
+User: Can you explain that more?
+Assistant: Explains the current active result more clearly.
+

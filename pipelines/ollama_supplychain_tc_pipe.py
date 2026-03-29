@@ -10,6 +10,7 @@ requirements: psycopg[binary]
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -123,7 +124,9 @@ class Pipeline:
                     normalized[field_name] = default if isinstance(default, str) else ""
             return normalized
 
-        NAME: str = Field(default=os.getenv("PIPELINE_NAME", "Supply Chain Internal Policy Pipeline"))
+        NAME: str = Field(
+            default=os.getenv("PIPELINE_NAME", "Ollama Supply Chain Internal Policy Pipeline")
+        )
         DATABASE_URL: str = Field(default=os.getenv("DATABASE_URL", ""))
         CHUNK_TABLE_NAME: str = Field(default=os.getenv("CHUNK_TABLE_NAME", "supply_chain_chunks"))
         DEFAULT_COLLECTION_NAME: str = Field(
@@ -156,26 +159,22 @@ class Pipeline:
             le=300,
         )
         EMBEDDING_DIMENSIONS: int = Field(
-            default=int(os.getenv("EMBEDDING_DIMENSIONS", "1536")),
+            default=int(os.getenv("EMBEDDING_DIMENSIONS", "768")),
             ge=1,
         )
-        AZURE_OPENAI_API_KEY: str = Field(default=os.getenv("AZURE_OPENAI_API_KEY", ""))
-        AZURE_OPENAI_ENDPOINT: str = Field(default=os.getenv("AZURE_OPENAI_ENDPOINT", ""))
-        AZURE_OPENAI_DEPLOYMENT_NAME: str = Field(
-            default=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o-mini")
+        OLLAMA_BASE_URL: str = Field(
+            default=os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
         )
-        AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME: str = Field(
-            default=os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME", "")
-        )
-        AZURE_OPENAI_API_VERSION: str = Field(
-            default=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01")
+        OLLAMA_CHAT_MODEL: str = Field(default=os.getenv("OLLAMA_CHAT_MODEL", "qwen3.5:9b"))
+        OLLAMA_EMBED_MODEL: str = Field(
+            default=os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
         )
 
     def __init__(self):
-        self.id = "supplychain_tc_pipeline"
+        self.id = "ollama_supplychain_tc_pipe"
         self.valves = self.Valves()
         self.name = self.valves.NAME
-        self._schema_cache: set[tuple[str, str]] = set()
+        self._schema_cache: set[tuple[str, str, int]] = set()
 
     async def on_valves_updated(self):
         self.name = self.valves.NAME
@@ -1409,42 +1408,19 @@ class Pipeline:
             raise RuntimeError(f"{name} must be set")
         return cleaned
 
-    def _azure_endpoint_root(self) -> str:
-        endpoint = self._require_config(self.valves.AZURE_OPENAI_ENDPOINT, "AZURE_OPENAI_ENDPOINT")
-        if "/openai/" in endpoint.lower():
-            raise RuntimeError(
-                "AZURE_OPENAI_ENDPOINT must be the endpoint root, not a pre-expanded /openai/ URL"
-            )
-        return endpoint.rstrip("/")
+    def _ollama_url_candidates(self) -> List[str]:
+        base_url = self._require_config(self.valves.OLLAMA_BASE_URL, "OLLAMA_BASE_URL").rstrip("/")
+        candidates = [base_url]
+        if "host.docker.internal" in base_url:
+            candidates.append(base_url.replace("host.docker.internal", "localhost"))
+        elif "localhost" in base_url:
+            candidates.append(base_url.replace("localhost", "host.docker.internal"))
 
-    def _azure_api_version(self) -> str:
-        return self._require_config(self.valves.AZURE_OPENAI_API_VERSION, "AZURE_OPENAI_API_VERSION")
-
-    def _azure_headers(self) -> Dict[str, str]:
-        return {
-            "api-key": self._require_config(self.valves.AZURE_OPENAI_API_KEY, "AZURE_OPENAI_API_KEY"),
-            "Content-Type": "application/json",
-        }
-
-    def _azure_chat_url(self) -> str:
-        deployment = self._require_config(
-            self.valves.AZURE_OPENAI_DEPLOYMENT_NAME,
-            "AZURE_OPENAI_DEPLOYMENT_NAME",
-        )
-        return (
-            f"{self._azure_endpoint_root()}/openai/deployments/{deployment}/chat/completions"
-            f"?api-version={self._azure_api_version()}"
-        )
-
-    def _azure_embedding_url(self) -> str:
-        deployment = self._require_config(
-            self.valves.AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME,
-            "AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME",
-        )
-        return (
-            f"{self._azure_endpoint_root()}/openai/deployments/{deployment}/embeddings"
-            f"?api-version={self._azure_api_version()}"
-        )
+        deduped: List[str] = []
+        for candidate in candidates:
+            if candidate not in deduped:
+                deduped.append(candidate)
+        return deduped
 
     def _chat_completion(
         self,
@@ -1454,36 +1430,51 @@ class Pipeline:
         timeout: int,
     ) -> str:
         payload = {
+            "model": self._require_config(self.valves.OLLAMA_CHAT_MODEL, "OLLAMA_CHAT_MODEL"),
             "messages": messages,
-            "temperature": temperature,
+            "stream": False,
+            "options": {"temperature": temperature},
         }
-        response = self._post_json(
-            self._azure_chat_url(),
-            payload,
-            headers=self._azure_headers(),
-            timeout=timeout,
-        )
-        choices = response.get("choices") or []
-        if not choices:
-            raise RuntimeError("Azure OpenAI returned no choices")
-        content = (choices[0].get("message") or {}).get("content", "").strip()
-        if not content:
-            raise RuntimeError("Azure OpenAI returned empty content")
-        return content
+        last_error: Optional[Exception] = None
+        for base_url in self._ollama_url_candidates():
+            try:
+                response = self._post_json(
+                    base_url + "/api/chat",
+                    payload,
+                    timeout=timeout,
+                )
+                content = (response.get("message") or {}).get("content", "").strip()
+                if not content:
+                    raise RuntimeError("Ollama returned an empty response")
+                return content
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+        raise RuntimeError(f"Failed to call Ollama chat endpoint: {last_error}") from last_error
 
     def _embed_text(self, text: str) -> List[float]:
-        response = self._post_json(
-            self._azure_embedding_url(),
-            {"input": text},
-            headers=self._azure_headers(),
-            timeout=self.valves.REQUEST_TIMEOUT_SECONDS,
-        )
-        data = response.get("data") or []
-        if not data or "embedding" not in data[0]:
-            raise RuntimeError("Azure OpenAI returned no embeddings")
-        vector = data[0]["embedding"]
-        self._validate_dimensions(vector)
-        return vector
+        payload = {
+            "model": self._require_config(self.valves.OLLAMA_EMBED_MODEL, "OLLAMA_EMBED_MODEL"),
+            "input": text,
+            "truncate": True,
+            "dimensions": self.valves.EMBEDDING_DIMENSIONS,
+        }
+        last_error: Optional[Exception] = None
+        for base_url in self._ollama_url_candidates():
+            try:
+                response = self._post_json(
+                    base_url + "/api/embed",
+                    payload,
+                    timeout=self.valves.REQUEST_TIMEOUT_SECONDS,
+                )
+                embeddings = response.get("embeddings") or []
+                if not embeddings:
+                    raise RuntimeError("Ollama returned no embeddings")
+                vector = embeddings[0]
+                self._validate_dimensions(vector)
+                return vector
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+        raise RuntimeError(f"Failed to call Ollama embedding endpoint: {last_error}") from last_error
 
     def _validate_dimensions(self, vector: List[float]) -> None:
         if len(vector) != self.valves.EMBEDDING_DIMENSIONS:
@@ -1549,34 +1540,72 @@ class Pipeline:
         key = (
             self.valves.DATABASE_URL,
             self.valves.CHUNK_TABLE_NAME,
+            self.valves.EMBEDDING_DIMENSIONS,
         )
         if key in self._schema_cache:
             return
 
         table_name = self._validate_table_name(self.valves.CHUNK_TABLE_NAME)
+        unique_idx = f"sc_chunks_uq_{hashlib.sha1(table_name.encode()).hexdigest()[:8]}"
+        filter_idx = f"sc_chunks_filter_{hashlib.sha1((table_name + '_f').encode()).hexdigest()[:8]}"
+        vector_idx = f"sc_chunks_hnsw_{hashlib.sha1((table_name + '_v').encode()).hexdigest()[:8]}"
+
         with self._get_connection() as conn:
             with conn.cursor() as cur:
+                cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
+                cur.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
                 cur.execute(
-                    """
-                    SELECT EXISTS (
-                        SELECT 1
-                        FROM pg_catalog.pg_class AS cls
-                        JOIN pg_catalog.pg_namespace AS ns
-                          ON ns.oid = cls.relnamespace
-                        WHERE cls.relkind IN ('r', 'p')
-                          AND cls.relname = %s
-                          AND ns.nspname = ANY(current_schemas(false))
+                    sql.SQL(
+                        """
+                        CREATE TABLE IF NOT EXISTS {table} (
+                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                            collection_name TEXT NOT NULL,
+                            external_id TEXT NOT NULL,
+                            clause_number TEXT NOT NULL,
+                            clause_number_norm TEXT NOT NULL,
+                            tc_number TEXT NOT NULL,
+                            tc_number_norm TEXT NOT NULL,
+                            topic TEXT,
+                            source_doc TEXT,
+                            section_title TEXT,
+                            chunk_text TEXT NOT NULL,
+                            guidance_text TEXT,
+                            metadata JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+                            embedding VECTOR({dimensions}) NOT NULL,
+                            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                        )
+                        """
+                    ).format(
+                        table=sql.Identifier(table_name),
+                        dimensions=sql.SQL(str(self.valves.EMBEDDING_DIMENSIONS)),
                     )
-                    """,
-                    (table_name,),
                 )
-                exists = cur.fetchone()
-
-        if not exists or not exists.get("exists"):
-            raise RuntimeError(
-                f"Vector table '{table_name}' is not provisioned. "
-                "This query pipeline is read-only; provision the table through the ingestion path before searching."
-            )
+                cur.execute(
+                    sql.SQL(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS {index_name} ON {table} (collection_name, external_id)"
+                    ).format(
+                        index_name=sql.Identifier(unique_idx),
+                        table=sql.Identifier(table_name),
+                    )
+                )
+                cur.execute(
+                    sql.SQL(
+                        "CREATE INDEX IF NOT EXISTS {index_name} ON {table} (collection_name, clause_number_norm, tc_number_norm)"
+                    ).format(
+                        index_name=sql.Identifier(filter_idx),
+                        table=sql.Identifier(table_name),
+                    )
+                )
+                cur.execute(
+                    sql.SQL(
+                        "CREATE INDEX IF NOT EXISTS {index_name} ON {table} USING hnsw (embedding vector_cosine_ops)"
+                    ).format(
+                        index_name=sql.Identifier(vector_idx),
+                        table=sql.Identifier(table_name),
+                    )
+                )
+            conn.commit()
 
         self._schema_cache.add(key)
 
