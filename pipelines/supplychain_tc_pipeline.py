@@ -1162,7 +1162,6 @@ class Pipeline:
         with self._get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
-                cur.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
                 cur.execute(
                     sql.SQL(
                         """
