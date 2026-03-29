@@ -10,6 +10,7 @@ requirements: psycopg[binary]
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -52,62 +53,6 @@ class Pipeline:
         "summarize that",
     )
     RESET_CUES = ("reset", "start over", "clear context", "new search", "/reset")
-    SECTION_TARGET_DISPLAY = {
-        "intent": "Intent",
-        "common_exceptions": "Common Exceptions / Suggested Responses",
-        "suggested_responses": "Suggested Responses",
-    }
-    SECTION_TARGET_ALIASES = (
-        (
-            "suggested_responses",
-            (
-                "suggested responses",
-                "suggested response",
-                "how should we respond",
-                "what should we say",
-                "recommended response",
-                "recommended responses",
-                "issue/response",
-                "issue response",
-                "how do we respond",
-                "response to pushback",
-            ),
-        ),
-        (
-            "common_exceptions",
-            (
-                "common exceptions / suggested responses",
-                "common exceptions",
-                "supplier pushback",
-                "common edits",
-                "common edit",
-                "what do suppliers object to",
-                "what issues come up",
-                "common issues",
-                "supplier objections",
-                "pushback",
-            ),
-        ),
-        (
-            "intent",
-            (
-                "why does this clause exist",
-                "what is this clause for",
-                "why do we have this clause",
-                "why is this clause here",
-                "purpose",
-                "intent",
-            ),
-        ),
-    )
-    SECTION_FILTER_PATTERNS = {
-        "intent": ("intent%", "%| intent%"),
-        "common_exceptions": (
-            "common exceptions / suggested responses%",
-            "%| common exceptions / suggested responses%",
-        ),
-        "suggested_responses": ("suggested responses%", "%| suggested responses%"),
-    }
 
     class Valves(BaseModel):
         @model_validator(mode="before")
@@ -124,7 +69,12 @@ class Pipeline:
             return normalized
 
         NAME: str = Field(default=os.getenv("PIPELINE_NAME", "Supply Chain Internal Policy Pipeline"))
-        DATABASE_URL: str = Field(default=os.getenv("DATABASE_URL", ""))
+        DATABASE_URL: str = Field(
+            default=os.getenv(
+                "DATABASE_URL",
+                "postgresql://openwebui:openwebui@postgres:5432/openwebui",
+            )
+        )
         CHUNK_TABLE_NAME: str = Field(default=os.getenv("CHUNK_TABLE_NAME", "supply_chain_chunks"))
         DEFAULT_COLLECTION_NAME: str = Field(
             default=os.getenv("DEFAULT_COLLECTION_NAME", "GSC-Internal-Policy")
@@ -147,45 +97,40 @@ class Pipeline:
             ge=5,
             le=300,
         )
-        ENABLE_ANSWERABILITY_CHECK: bool = Field(
-            default=_env_bool("ENABLE_ANSWERABILITY_CHECK", True)
-        )
-        ANSWERABILITY_TIMEOUT_SECONDS: int = Field(
-            default=int(os.getenv("ANSWERABILITY_TIMEOUT_SECONDS", "30")),
-            ge=5,
-            le=300,
-        )
+
+        ANSWER_PROVIDER: str = Field(default=os.getenv("ANSWER_PROVIDER", "ollama"))
+        ANSWER_MODEL: str = Field(default=os.getenv("ANSWER_MODEL", "gpt-oss:20b"))
+        EMBEDDING_PROVIDER: str = Field(default=os.getenv("EMBEDDING_PROVIDER", "ollama"))
+        EMBEDDING_MODEL: str = Field(default=os.getenv("EMBEDDING_MODEL", ""))
         EMBEDDING_DIMENSIONS: int = Field(
-            default=int(os.getenv("EMBEDDING_DIMENSIONS", "1536")),
+            default=int(os.getenv("EMBEDDING_DIMENSIONS", "768")),
             ge=1,
         )
+
+        EXTRACTOR_PROVIDER: str = Field(default=os.getenv("EXTRACTOR_PROVIDER", "ollama"))
+        EXTRACTOR_MODEL: str = Field(default=os.getenv("EXTRACTOR_MODEL", "gpt-oss:20b"))
+        FORMATTER_PROVIDER: str = Field(default=os.getenv("FORMATTER_PROVIDER", "ollama"))
+        FORMATTER_MODEL: str = Field(default=os.getenv("FORMATTER_MODEL", "gpt-oss:20b"))
+
+        OLLAMA_BASE_URL: str = Field(
+            default=os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+        )
+        OLLAMA_CHAT_MODEL: str = Field(default=os.getenv("OLLAMA_CHAT_MODEL", "gpt-oss:20b"))
+        OLLAMA_EMBED_MODEL: str = Field(default=os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text"))
+        AZURE_OPENAI_BASE_URL: str = Field(default=os.getenv("AZURE_OPENAI_BASE_URL", ""))
         AZURE_OPENAI_API_KEY: str = Field(default=os.getenv("AZURE_OPENAI_API_KEY", ""))
-        AZURE_OPENAI_ENDPOINT: str = Field(default=os.getenv("AZURE_OPENAI_ENDPOINT", ""))
-        AZURE_OPENAI_DEPLOYMENT_NAME: str = Field(
-            default=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o-mini")
-        )
-        AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME: str = Field(
-            default=os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME", "")
-        )
-        AZURE_OPENAI_API_VERSION: str = Field(
-            default=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01")
-        )
+        AZURE_OPENAI_CHAT_MODEL: str = Field(default=os.getenv("AZURE_OPENAI_CHAT_MODEL", ""))
+        AZURE_OPENAI_EMBED_MODEL: str = Field(default=os.getenv("AZURE_OPENAI_EMBED_MODEL", ""))
 
     def __init__(self):
         self.id = "supplychain_tc_pipeline"
         self.valves = self.Valves()
         self.name = self.valves.NAME
-        self._schema_cache: set[tuple[str, str]] = set()
+        self._schema_cache: set[tuple[str, str, int]] = set()
 
     async def on_valves_updated(self):
         self.name = self.valves.NAME
         self._schema_cache.clear()
-
-    async def on_startup(self):
-        self.name = self.valves.NAME
-
-    async def on_shutdown(self):
-        return None
 
     def _status_details(self, title: str, body: str = "", done: bool = False) -> str:
         done_attr = "true" if done else "false"
@@ -281,31 +226,6 @@ class Pipeline:
             yield self._build_missing_message(merged, missing)
             return
 
-        applicability = self._check_clause_termset_applicability(
-            collection_name=self.valves.DEFAULT_COLLECTION_NAME,
-            clause_number=merged["clause_number"],
-            termset_number=merged["termset_number"],
-        )
-        if applicability["clause_exists"] and applicability["applicable_termsets"] and not applicability["is_applicable"]:
-            applicable_termsets = ", ".join(applicability["applicable_termsets"])
-            yield self._status_details(
-                "Not Applicable",
-                (
-                    f"Clause {merged['clause_number']} exists in collection "
-                    f"'{self.valves.DEFAULT_COLLECTION_NAME}', but its metadata filters only show "
-                    f"applicable termset(s): {applicable_termsets}."
-                ),
-                done=True,
-            )
-            message = (
-                f"Clause {merged['clause_number']} is not applicable for termset "
-                f"{merged['termset_number']}."
-            )
-            if applicable_termsets:
-                message += f" Applicable termsets found in the clause metadata: {applicable_termsets}."
-            yield message
-            return
-
         status_decision = self._status_decision(
             decision=decision,
             current_text=current_text,
@@ -317,18 +237,11 @@ class Pipeline:
             yield self._status_details("Search", search_status, done=False)
 
         yield self._status_details(
-            "Extraction",
-            self._extraction_status_message(
-                current_text=current_text,
-                parsed=parsed,
-                merged=merged,
-            ),
-            done=False,
-        )
-
-        yield self._status_details(
             "Retrieval",
-            self._retrieval_status_message(merged),
+            (
+                f"Querying collection '{self.valves.DEFAULT_COLLECTION_NAME}' for Clause "
+                f"{merged['clause_number']} under termset {merged['termset_number']}."
+            ),
             done=False,
         )
 
@@ -339,27 +252,12 @@ class Pipeline:
                 termset_number=merged["termset_number"],
                 query=merged["query_text"],
                 top_k=self.valves.TOP_K,
-                section_target=merged.get("section_target"),
             )
         except Exception as exc:  # noqa: BLE001
             message = f"Search failed before retrieval could complete: {exc}"
             yield self._status_details("Error", message, done=True)
             yield message
             return
-
-        if hits.get("fallback_used") and hits.get("requested_section_target"):
-            yield self._status_details(
-                "Retrieval",
-                (
-                    f"No hits in the requested "
-                    f"{self._section_target_label(hits['requested_section_target'])} section for Clause "
-                    f"{merged['clause_number']} under termset {merged['termset_number']}; "
-                    f"falling back to the full clause in collection '{self.valves.DEFAULT_COLLECTION_NAME}'."
-                ),
-                done=False,
-            )
-
-        hits = hits["hits"]
 
         if not hits:
             message = (
@@ -377,20 +275,6 @@ class Pipeline:
                 done=True,
             )
             yield message
-            return
-
-        answerability = self._assess_answerability(
-            merged=merged,
-            user_text=current_text,
-            hits=hits,
-            collection_name=self.valves.DEFAULT_COLLECTION_NAME,
-        )
-        if answerability.get("answerable") is False:
-            reason = self._clean_optional(answerability.get("reason")) or (
-                "Retrieved clause guidance was reviewed, but it does not answer the user's question."
-            )
-            yield self._status_details("No Answer", reason, done=True)
-            yield self._build_no_answer_message(merged)
             return
 
         provenance_notice = self._provenance_notice(hits)
@@ -452,7 +336,6 @@ class Pipeline:
         label_termset_matches = self.TERMSET_LABEL_RE.findall(text)
         code_termset_matches = self.TERMSET_CODE_RE.findall(text)
         raw_termset_matches = [*label_termset_matches, *code_termset_matches]
-        section_target = self._detect_section_target(text)
 
         if len(clause_matches) > 1 and "compare" not in text.lower():
             raise ValueError(
@@ -506,7 +389,6 @@ class Pipeline:
             "clause_number": clause_number,
             "termset_number": termset_number,
             "query_text": query_text,
-            "section_target": section_target,
         }
 
     def _derive_prior_state(self, user_messages: List[dict]) -> Dict[str, Optional[str]]:
@@ -532,12 +414,7 @@ class Pipeline:
         return state
 
     def _empty_state(self) -> Dict[str, Optional[str]]:
-        return {
-            "clause_number": None,
-            "termset_number": None,
-            "query_text": None,
-            "section_target": None,
-        }
+        return {"clause_number": None, "termset_number": None, "query_text": None}
 
     def _should_use_extractor(self) -> bool:
         return (
@@ -574,17 +451,11 @@ class Pipeline:
         query_text = self._clean_query_text(
             preferred.get("query_text") or deterministic.get("query_text")
         )
-        section_candidate = self._normalize_section_target(preferred.get("section_target"))
-        deterministic_section = self._normalize_section_target(deterministic.get("section_target"))
-        if deterministic_section and section_candidate and section_candidate != deterministic_section:
-            section_candidate = deterministic_section
-        section_target = section_candidate or deterministic_section
 
         return {
             "clause_number": clause_number,
             "termset_number": termset_number,
             "query_text": query_text,
-            "section_target": section_target,
         }
 
     def _classify_turn(
@@ -660,7 +531,6 @@ class Pipeline:
             "clause_number": prior_state.get("clause_number"),
             "termset_number": prior_state.get("termset_number"),
             "query_text": prior_state.get("query_text"),
-            "section_target": prior_state.get("section_target"),
         }
 
         if parsed.get("clause_number"):
@@ -669,14 +539,9 @@ class Pipeline:
             merged["termset_number"] = parsed["termset_number"]
         if parsed.get("query_text"):
             merged["query_text"] = parsed["query_text"]
-        if parsed.get("section_target"):
-            merged["section_target"] = parsed["section_target"]
 
         if decision == "followup_explain" and not parsed.get("query_text"):
             merged["query_text"] = prior_state.get("query_text")
-            merged["section_target"] = prior_state.get("section_target")
-        elif decision in {"new_search", "same_context_new_query"} and not parsed.get("section_target"):
-            merged["section_target"] = None
 
         return merged
 
@@ -749,55 +614,6 @@ class Pipeline:
             )
         return ""
 
-    def _extraction_status_message(
-        self,
-        *,
-        current_text: str,
-        parsed: Dict[str, Optional[str]],
-        merged: Dict[str, Optional[str]],
-    ) -> str:
-        extracted_clause = parsed.get("clause_number") or "none"
-        extracted_termset = parsed.get("termset_number") or "none"
-        extracted_query = parsed.get("query_text") or "none"
-        extracted_section_target = self._section_target_label(parsed.get("section_target")) or "none"
-        filter_clause = merged.get("clause_number") or "none"
-        filter_termset = merged.get("termset_number") or "none"
-        active_query = merged.get("query_text") or "none"
-        requested_section_target = self._section_target_label(merged.get("section_target")) or "none"
-
-        return (
-            "Parsed the current message into filter inputs and query text.\n\n"
-            f"Current message: {current_text}\n"
-            f"Extracted clause: {extracted_clause}\n"
-            f"Extracted termset: {extracted_termset}\n"
-            f"Extracted query: {extracted_query}\n"
-            f"Extracted section target: {extracted_section_target}\n"
-            f"Applied clause filter: {filter_clause}\n"
-            f"Applied termset filter: {filter_termset}\n"
-            f"Requested section target: {requested_section_target}\n"
-            f"Semantic query text: {active_query}"
-        )
-
-    def _retrieval_status_message(self, merged: Dict[str, Optional[str]]) -> str:
-        section_target = self._section_target_label(merged.get("section_target"))
-        if section_target:
-            return (
-                f"Searching the {section_target} section first for Clause "
-                f"{merged['clause_number']} under termset {merged['termset_number']} "
-                f"in collection '{self.valves.DEFAULT_COLLECTION_NAME}'."
-            )
-        return (
-            f"Querying collection '{self.valves.DEFAULT_COLLECTION_NAME}' for Clause "
-            f"{merged['clause_number']} under termset {merged['termset_number']}."
-        )
-
-    def _detect_section_target(self, text: str) -> Optional[str]:
-        lowered = text.lower()
-        for section_target, phrases in self.SECTION_TARGET_ALIASES:
-            if any(phrase in lowered for phrase in phrases):
-                return section_target
-        return None
-
     def _extract_with_llm(
         self,
         current_text: str,
@@ -810,18 +626,9 @@ class Pipeline:
                 "content": (
                     "Extract structured fields for a supply-chain internal policy retrieval workflow. "
                     "The user may refer to a termset as 'termset', 'termet', 'T&C', or a full code like CTM-P-ST-001. "
-                    "Return JSON only with keys: clause_number, termset_number, query_text, section_target, intent, has_required_inputs. "
+                    "Return JSON only with keys: clause_number, termset_number, query_text, intent, has_required_inputs. "
                     "Intent must be one of followup_explain, new_search, identifier_update, same_context_new_query, collect_or_search. "
-                    "section_target must be one of: intent, common_exceptions, suggested_responses, none. "
-                    "Use null when a field cannot be confidently extracted. "
-                    "Rewrite query_text for vector similarity search instead of copying the full question. "
-                    "Remove clause numbers, termset references, question framing, and filler words. "
-                    "Keep the core policy topic as a short semantic phrase that would match policy text. "
-                    "Do not end query_text with trailing prepositions or filler such as 'for', 'about', 'under', or 'of'. "
-                    "Examples: "
-                    "'What does clause 3 say about indemnity for termset 2?' -> 'indemnity provisions'; "
-                    "'Now check clause 8 for termset 4 about delivery timing' -> 'delivery timing'; "
-                    "'Explain clause 5 for termset 1 about insurance requirements' -> 'insurance requirements'."
+                    "Use null when a field cannot be confidently extracted."
                 ),
             },
             {
@@ -837,7 +644,13 @@ class Pipeline:
         ]
 
         try:
+            provider = self._resolve_provider(
+                self.valves.EXTRACTOR_PROVIDER,
+                fallback=self.valves.ANSWER_PROVIDER,
+            )
             raw = self._chat_completion(
+                provider=provider,
+                model=self._resolve_chat_model(provider, self.valves.EXTRACTOR_MODEL, "extractor"),
                 messages=messages,
                 temperature=0.0,
                 timeout=self.valves.EXTRACTOR_TIMEOUT_SECONDS,
@@ -859,13 +672,9 @@ class Pipeline:
                 "role": "system",
                 "content": (
                     "Format and normalize retrieval inputs for a supply-chain internal policy assistant. "
-                    "Return JSON only with keys: clause_number, termset_number, query_text, section_target, intent, has_required_inputs. "
+                    "Return JSON only with keys: clause_number, termset_number, query_text, intent, has_required_inputs. "
                     "Normalize termset_number to a three-digit string when possible, such as 1 -> 001 or CTM-P-ST-001 -> 001. "
-                    "Normalize section_target to one of: intent, common_exceptions, suggested_responses, none. "
-                    "Rewrite query_text for vector similarity search as a concise semantic phrase, not a conversational question. "
-                    "Prefer a short topical phrase like 'indemnity provisions', 'delivery timing', or 'inspection criteria'. "
-                    "Remove clause references, termset references, question framing, and trailing filler words. "
-                    "Do not let query_text end with words like 'for', 'about', 'under', or 'of'. "
+                    "Keep query_text concise and searchable. "
                     "If you are unsure, preserve the deterministic hints."
                 ),
             },
@@ -883,7 +692,17 @@ class Pipeline:
         ]
 
         try:
+            provider = self._resolve_provider(
+                self.valves.FORMATTER_PROVIDER,
+                fallback=self.valves.EXTRACTOR_PROVIDER or self.valves.ANSWER_PROVIDER,
+            )
             raw = self._chat_completion(
+                provider=provider,
+                model=self._resolve_chat_model(
+                    provider,
+                    self.valves.FORMATTER_MODEL or self.valves.EXTRACTOR_MODEL,
+                    "formatter",
+                ),
                 messages=messages,
                 temperature=0.0,
                 timeout=self.valves.EXTRACTOR_TIMEOUT_SECONDS,
@@ -893,12 +712,20 @@ class Pipeline:
             return {}
 
     def _parse_json_object(self, raw: str) -> Dict[str, Optional[Any]]:
-        data = self._extract_json_dict(raw)
-        if not data:
+        text = raw.strip()
+        if text.startswith("```"):
+            text = re.sub(r"^```(?:json)?\s*", "", text)
+            text = re.sub(r"\s*```$", "", text)
+        match = re.search(r"\{.*\}", text, flags=re.DOTALL)
+        if not match:
+            return {}
+        try:
+            data = json.loads(match.group(0))
+        except json.JSONDecodeError:
             return {}
 
         result: Dict[str, Optional[Any]] = {}
-        for key in ("clause_number", "termset_number", "query_text", "section_target", "intent"):
+        for key in ("clause_number", "termset_number", "query_text", "intent"):
             value = data.get(key)
             if isinstance(value, str):
                 value = value.strip() or None
@@ -915,121 +742,6 @@ class Pipeline:
             result["has_required_inputs"] = None
         return result
 
-    def _extract_json_dict(self, raw: str) -> Dict[str, Any]:
-        text = raw.strip()
-        if text.startswith("```"):
-            text = re.sub(r"^```(?:json)?\s*", "", text)
-            text = re.sub(r"\s*```$", "", text)
-        match = re.search(r"\{.*\}", text, flags=re.DOTALL)
-        if not match:
-            return {}
-        try:
-            data = json.loads(match.group(0))
-        except json.JSONDecodeError:
-            return {}
-        return data if isinstance(data, dict) else {}
-
-    def _parse_bool_like(self, value: Any) -> Optional[bool]:
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, str):
-            normalized = value.strip().lower()
-            if normalized in {"1", "true", "yes", "on"}:
-                return True
-            if normalized in {"0", "false", "no", "off"}:
-                return False
-        return None
-
-    def _parse_answerability_result(self, raw: str) -> Dict[str, Optional[Any]]:
-        data = self._extract_json_dict(raw)
-        if not data:
-            return {"answerable": None, "reason": None}
-        return {
-            "answerable": self._parse_bool_like(data.get("answerable")),
-            "reason": self._clean_optional(data.get("reason")),
-        }
-
-    def _check_clause_termset_applicability(
-        self,
-        *,
-        collection_name: str,
-        clause_number: str,
-        termset_number: str,
-    ) -> Dict[str, Any]:
-        self._ensure_schema()
-        table = self._table_identifier()
-        query_sql = sql.SQL(
-            """
-            SELECT
-                tc_number,
-                tc_number_norm,
-                metadata
-            FROM {table}
-            WHERE collection_name = %s
-              AND clause_number_norm = %s
-            """
-        ).format(table=table)
-
-        with self._get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    query_sql,
-                    (
-                        collection_name,
-                        self._normalize_identifier(clause_number),
-                    ),
-                )
-                rows = cur.fetchall()
-
-        applicable_termsets = sorted(self._collect_applicable_termsets(rows))
-        normalized_requested = self._normalize_termset_number(termset_number)
-        return {
-            "clause_exists": bool(rows),
-            "applicable_termsets": applicable_termsets,
-            "is_applicable": (
-                normalized_requested in applicable_termsets
-                if normalized_requested and applicable_termsets
-                else True
-            ),
-        }
-
-    def _collect_applicable_termsets(self, rows: List[Dict[str, Any]]) -> set[str]:
-        applicable_termsets: set[str] = set()
-        for row in rows:
-            metadata = row.get("metadata") or {}
-            if isinstance(metadata, str):
-                try:
-                    metadata = json.loads(metadata)
-                except Exception:
-                    metadata = {}
-            if not isinstance(metadata, dict):
-                metadata = {}
-
-            candidates: List[Any] = [
-                row.get("tc_number"),
-                row.get("tc_number_norm"),
-                metadata.get("termset_number"),
-            ]
-
-            all_termsets = metadata.get("all_applicable_termsets")
-            if isinstance(all_termsets, list):
-                candidates.extend(all_termsets)
-            elif all_termsets is not None:
-                candidates.append(all_termsets)
-
-            all_codes = metadata.get("all_applicable_termset_codes")
-            if isinstance(all_codes, list):
-                candidates.extend(all_codes)
-            elif all_codes is not None:
-                candidates.append(all_codes)
-
-            for candidate in candidates:
-                normalized = self._normalize_termset_number(candidate)
-                if normalized:
-                    applicable_termsets.add(normalized)
-
-        return applicable_termsets
-
     def _search_guidance(
         self,
         *,
@@ -1038,96 +750,10 @@ class Pipeline:
         termset_number: str,
         query: str,
         top_k: int,
-        section_target: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        normalized_section_target = self._normalize_section_target(section_target)
-        if normalized_section_target:
-            section_hits = self._search_guidance_rows(
-                collection_name=collection_name,
-                clause_number=clause_number,
-                termset_number=termset_number,
-                query=query,
-                top_k=top_k,
-                section_target=normalized_section_target,
-            )
-            if section_hits:
-                return {
-                    "hits": section_hits,
-                    "requested_section_target": normalized_section_target,
-                    "applied_section_target": normalized_section_target,
-                    "fallback_used": False,
-                }
-
-            return {
-                "hits": self._search_guidance_rows(
-                    collection_name=collection_name,
-                    clause_number=clause_number,
-                    termset_number=termset_number,
-                    query=query,
-                    top_k=top_k,
-                    section_target=None,
-                ),
-                "requested_section_target": normalized_section_target,
-                "applied_section_target": None,
-                "fallback_used": True,
-            }
-
-        return {
-            "hits": self._search_guidance_rows(
-                collection_name=collection_name,
-                clause_number=clause_number,
-                termset_number=termset_number,
-                query=query,
-                top_k=top_k,
-                section_target=None,
-            ),
-            "requested_section_target": None,
-            "applied_section_target": None,
-            "fallback_used": False,
-        }
-
-    def _search_guidance_rows(
-        self,
-        *,
-        collection_name: str,
-        clause_number: str,
-        termset_number: str,
-        query: str,
-        top_k: int,
-        section_target: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         self._ensure_schema()
         query_embedding = self._embed_text(query)
         table = self._table_identifier()
-        vec = self._vector_literal(query_embedding)
-        filters = [
-            sql.SQL("collection_name = %s"),
-            sql.SQL("clause_number_norm = %s"),
-            sql.SQL("tc_number_norm = %s"),
-        ]
-        params: List[Any] = [
-            vec,
-            collection_name,
-            self._normalize_identifier(clause_number),
-            self._normalize_identifier(termset_number),
-        ]
-
-        section_patterns = self._section_filter_patterns(section_target)
-        if section_patterns:
-            section_conditions = []
-            for pattern in section_patterns:
-                section_conditions.append(
-                    sql.SQL("LOWER(COALESCE(metadata->>'segment_title', '')) LIKE %s")
-                )
-                params.append(pattern)
-                section_conditions.append(
-                    sql.SQL("LOWER(COALESCE(section_title, '')) LIKE %s")
-                )
-                params.append(pattern)
-            filters.append(
-                sql.SQL("(") + sql.SQL(" OR ").join(section_conditions) + sql.SQL(")")
-            )
-
         query_sql = sql.SQL(
             """
             SELECT
@@ -1144,81 +770,29 @@ class Pipeline:
                 metadata,
                 1 - (embedding <=> %s::vector) AS score
             FROM {table}
-            WHERE {filters}
+            WHERE collection_name = %s
+              AND clause_number_norm = %s
+              AND tc_number_norm = %s
             ORDER BY embedding <=> %s::vector
             LIMIT %s
             """
-        ).format(
-            table=table,
-            filters=sql.SQL(" AND ").join(filters),
-        )
-        params.extend([vec, top_k])
+        ).format(table=table)
 
+        vec = self._vector_literal(query_embedding)
         with self._get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(query_sql, params)
+                cur.execute(
+                    query_sql,
+                    (
+                        vec,
+                        collection_name,
+                        self._normalize_identifier(clause_number),
+                        self._normalize_identifier(termset_number),
+                        vec,
+                        top_k,
+                    ),
+                )
                 return cur.fetchall()
-
-    def _assess_answerability(
-        self,
-        *,
-        merged: Dict[str, str],
-        user_text: str,
-        hits: List[dict],
-        collection_name: str,
-    ) -> Dict[str, Optional[Any]]:
-        if not self.valves.ENABLE_ANSWERABILITY_CHECK:
-            return {"answerable": True, "reason": None}
-
-        source_blocks = []
-        for idx, hit in enumerate(hits[: min(5, len(hits))], start=1):
-            snippet = self._clean_optional(hit.get("chunk_text") or hit.get("guidance_text")) or ""
-            snippet = re.sub(r"\s+", " ", snippet)
-            if len(snippet) > 500:
-                snippet = snippet[:497].rstrip() + "..."
-            try:
-                score = round(float(hit.get("score", 0.0)), 4)
-            except (TypeError, ValueError):
-                score = "unknown"
-            source_blocks.append(
-                f"[S{idx}] section={hit.get('section_title', 'untitled')} "
-                f"termset={hit.get('tc_number', 'unknown')} "
-                f"score={score}\n{snippet}"
-            )
-
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are validating whether retrieved clause-search evidence actually answers a user's question. "
-                    "Return JSON only with keys: answerable, reason. "
-                    "Set answerable to false unless the retrieved evidence directly and materially answers the user's question. "
-                    "If the evidence is only related, partial, generic, or does not address the asked point, answerable must be false."
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Collection: {collection_name}\n"
-                    f"Clause Number: {merged['clause_number']}\n"
-                    f"Termset Number: {merged['termset_number']}\n"
-                    f"Section Focus: {self._section_target_label(merged.get('section_target')) or 'none'}\n"
-                    f"Active question: {merged['query_text']}\n"
-                    f"Current user message: {user_text}\n\n"
-                    f"Retrieved guidance:\n\n" + "\n\n".join(source_blocks)
-                ),
-            },
-        ]
-
-        try:
-            raw = self._chat_completion(
-                messages=messages,
-                temperature=0.0,
-                timeout=self.valves.ANSWERABILITY_TIMEOUT_SECONDS,
-            )
-            return self._parse_answerability_result(raw)
-        except Exception:
-            return {"answerable": None, "reason": None}
 
     def _build_grounding_messages(
         self,
@@ -1250,9 +824,7 @@ class Pipeline:
         system = (
             "You are an internal supply-chain policy guidance assistant. "
             "Answer only from the retrieved guidance below. "
-            "If the evidence is insufficient, answer exactly: "
-            "'There is no information that answers this question from the clause search. "
-            "Please elevate this question to your compliance lead.' "
+            "If the evidence is insufficient, say so clearly. "
             "If a retrieved source directly states the answer, summarize it plainly instead of saying the text is missing. "
             "If a source includes visible wording plus [unclear] markers, use the visible wording and note only the unclear tail if it matters. "
             "For chunks that contain 'Issue:' and 'Response:', treat the Response text as the primary answer. "
@@ -1266,7 +838,6 @@ class Pipeline:
             f"- Collection: {collection_name}\n"
             f"- Clause Number: {merged['clause_number']}\n"
             f"- Termset Number: {merged['termset_number']}\n"
-            f"- Section Focus: {self._section_target_label(merged.get('section_target')) or 'none'}\n"
             f"- Active question: {merged['query_text']}\n"
             f"- Current user message: {user_text}\n\n"
             f"Retrieved guidance:\n\n" + "\n\n".join(source_blocks)
@@ -1339,7 +910,10 @@ class Pipeline:
         return "\n".join(lines).rstrip()
 
     def _generate_answer(self, messages: List[dict]) -> str:
+        provider = self._resolve_provider(self.valves.ANSWER_PROVIDER)
         return self._chat_completion(
+            provider=provider,
+            model=self._resolve_chat_model(provider, self.valves.ANSWER_MODEL, "answer"),
             messages=messages,
             temperature=0.1,
             timeout=self.valves.REQUEST_TIMEOUT_SECONDS,
@@ -1356,134 +930,168 @@ class Pipeline:
         if not cleaned:
             return None
         cleaned = re.sub(r"\s+", " ", cleaned).strip(" -:,.?")
-        trailing_fillers = (
-            "for",
-            "about",
-            "under",
-            "of",
-            "to",
-            "on",
-            "in",
-            "regarding",
-            "concerning",
-        )
-        trailing_pattern = r"(?i)\b(?:" + "|".join(trailing_fillers) + r")\b\s*$"
-        while cleaned:
-            updated = re.sub(trailing_pattern, "", cleaned).strip(" -:,.?")
-            if updated == cleaned:
-                break
-            cleaned = updated
         return cleaned or None
 
-    def _normalize_section_target(self, value: Optional[Any]) -> Optional[str]:
-        cleaned = self._clean_optional(value)
-        if not cleaned:
-            return None
-
-        lowered = cleaned.lower()
-        if lowered in {"none", "null", "no_section"}:
-            return None
-        if "suggested" in lowered and "response" in lowered:
-            return "suggested_responses"
-        if "common exception" in lowered or "supplier pushback" in lowered or "common edit" in lowered:
-            return "common_exceptions"
-        if "intent" in lowered or "purpose" in lowered:
-            return "intent"
-        return None
-
-    def _section_target_label(self, section_target: Optional[str]) -> Optional[str]:
-        normalized = self._normalize_section_target(section_target)
-        if not normalized:
-            return None
-        return self.SECTION_TARGET_DISPLAY.get(normalized)
-
-    def _section_filter_patterns(self, section_target: Optional[str]) -> List[str]:
-        normalized = self._normalize_section_target(section_target)
-        if not normalized:
-            return []
-        return [pattern.lower() for pattern in self.SECTION_FILTER_PATTERNS.get(normalized, ())]
-
-    def _require_config(self, value: Optional[Any], name: str) -> str:
-        cleaned = self._clean_optional(value)
-        if not cleaned:
-            raise RuntimeError(f"{name} must be set")
-        return cleaned
-
-    def _azure_endpoint_root(self) -> str:
-        endpoint = self._require_config(self.valves.AZURE_OPENAI_ENDPOINT, "AZURE_OPENAI_ENDPOINT")
-        if "/openai/" in endpoint.lower():
-            raise RuntimeError(
-                "AZURE_OPENAI_ENDPOINT must be the endpoint root, not a pre-expanded /openai/ URL"
-            )
-        return endpoint.rstrip("/")
-
-    def _azure_api_version(self) -> str:
-        return self._require_config(self.valves.AZURE_OPENAI_API_VERSION, "AZURE_OPENAI_API_VERSION")
-
-    def _azure_headers(self) -> Dict[str, str]:
-        return {
-            "api-key": self._require_config(self.valves.AZURE_OPENAI_API_KEY, "AZURE_OPENAI_API_KEY"),
-            "Content-Type": "application/json",
+    def _resolve_provider(self, value: Optional[str], fallback: str = "ollama") -> str:
+        raw = self._clean_optional(value) or fallback
+        normalized = raw.strip().lower().replace("-", "_").replace(" ", "_")
+        aliases = {
+            "ollama": "ollama",
+            "azure_openai": "azure_openai",
+            "azure": "azure_openai",
+            "openai_azure": "azure_openai",
         }
+        provider = aliases.get(normalized)
+        if not provider:
+            raise RuntimeError(
+                f"Unsupported provider '{raw}'. Use 'ollama' or 'azure_openai'."
+            )
+        return provider
 
-    def _azure_chat_url(self) -> str:
-        deployment = self._require_config(
-            self.valves.AZURE_OPENAI_DEPLOYMENT_NAME,
-            "AZURE_OPENAI_DEPLOYMENT_NAME",
-        )
-        return (
-            f"{self._azure_endpoint_root()}/openai/deployments/{deployment}/chat/completions"
-            f"?api-version={self._azure_api_version()}"
-        )
+    def _resolve_chat_model(self, provider: str, override: Optional[str], role: str) -> str:
+        explicit = self._clean_optional(override)
+        if explicit:
+            return explicit
 
-    def _azure_embedding_url(self) -> str:
-        deployment = self._require_config(
-            self.valves.AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME,
-            "AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME",
-        )
-        return (
-            f"{self._azure_endpoint_root()}/openai/deployments/{deployment}/embeddings"
-            f"?api-version={self._azure_api_version()}"
-        )
+        if provider == "ollama":
+            model = self._clean_optional(self.valves.OLLAMA_CHAT_MODEL)
+            if model:
+                return model
+            raise RuntimeError(f"OLLAMA_CHAT_MODEL must be set when {role} provider is ollama")
+
+        if provider == "azure_openai":
+            model = self._clean_optional(self.valves.AZURE_OPENAI_CHAT_MODEL)
+            if model:
+                return model
+            raise RuntimeError(
+                f"AZURE_OPENAI_CHAT_MODEL must be set when {role} provider is azure_openai"
+            )
+
+        raise RuntimeError(f"Unsupported provider: {provider}")
+
+    def _resolve_embedding_model(self, provider: str, override: Optional[str]) -> str:
+        explicit = self._clean_optional(override)
+        if explicit:
+            return explicit
+
+        if provider == "ollama":
+            model = self._clean_optional(self.valves.OLLAMA_EMBED_MODEL)
+            if model:
+                return model
+            raise RuntimeError("OLLAMA_EMBED_MODEL must be set when embedding provider is ollama")
+
+        if provider == "azure_openai":
+            model = self._clean_optional(self.valves.AZURE_OPENAI_EMBED_MODEL)
+            if model:
+                return model
+            raise RuntimeError(
+                "AZURE_OPENAI_EMBED_MODEL must be set when embedding provider is azure_openai"
+            )
+
+        raise RuntimeError(f"Unsupported provider: {provider}")
 
     def _chat_completion(
         self,
         *,
+        provider: str,
+        model: str,
         messages: List[dict],
         temperature: float,
         timeout: int,
     ) -> str:
-        payload = {
-            "messages": messages,
-            "temperature": temperature,
-        }
-        response = self._post_json(
-            self._azure_chat_url(),
-            payload,
-            headers=self._azure_headers(),
-            timeout=timeout,
-        )
-        choices = response.get("choices") or []
-        if not choices:
-            raise RuntimeError("Azure OpenAI returned no choices")
-        content = (choices[0].get("message") or {}).get("content", "").strip()
-        if not content:
-            raise RuntimeError("Azure OpenAI returned empty content")
-        return content
+        if provider == "ollama":
+            if not self._clean_optional(self.valves.OLLAMA_BASE_URL):
+                raise RuntimeError("OLLAMA_BASE_URL must be set when using ollama")
+            payload = {
+                "model": model,
+                "messages": messages,
+                "stream": False,
+                "options": {"temperature": temperature},
+            }
+            response = self._post_json(
+                self.valves.OLLAMA_BASE_URL.rstrip("/") + "/api/chat",
+                payload,
+                timeout=timeout,
+            )
+            content = (response.get("message") or {}).get("content", "").strip()
+            if not content:
+                raise RuntimeError("Ollama returned an empty response")
+            return content
+
+        if provider == "azure_openai":
+            if not self._clean_optional(self.valves.AZURE_OPENAI_BASE_URL):
+                raise RuntimeError("AZURE_OPENAI_BASE_URL must be set when using azure_openai")
+            if not self._clean_optional(self.valves.AZURE_OPENAI_API_KEY):
+                raise RuntimeError("AZURE_OPENAI_API_KEY must be set when using azure_openai")
+            payload = {
+                "model": model,
+                "messages": messages,
+                "temperature": temperature,
+            }
+            response = self._post_json(
+                self.valves.AZURE_OPENAI_BASE_URL.rstrip("/") + "/chat/completions",
+                payload,
+                headers={"api-key": self.valves.AZURE_OPENAI_API_KEY},
+                timeout=timeout,
+            )
+            choices = response.get("choices") or []
+            if not choices:
+                raise RuntimeError("Azure OpenAI returned no choices")
+            content = (choices[0].get("message") or {}).get("content", "").strip()
+            if not content:
+                raise RuntimeError("Azure OpenAI returned empty content")
+            return content
+
+        raise RuntimeError(f"Unsupported provider: {provider}")
 
     def _embed_text(self, text: str) -> List[float]:
-        response = self._post_json(
-            self._azure_embedding_url(),
-            {"input": text},
-            headers=self._azure_headers(),
-            timeout=self.valves.REQUEST_TIMEOUT_SECONDS,
-        )
-        data = response.get("data") or []
-        if not data or "embedding" not in data[0]:
-            raise RuntimeError("Azure OpenAI returned no embeddings")
-        vector = data[0]["embedding"]
-        self._validate_dimensions(vector)
-        return vector
+        provider = self._resolve_provider(self.valves.EMBEDDING_PROVIDER)
+        model = self._resolve_embedding_model(provider, self.valves.EMBEDDING_MODEL)
+        if provider == "ollama":
+            if not self._clean_optional(self.valves.OLLAMA_BASE_URL):
+                raise RuntimeError("OLLAMA_BASE_URL must be set when embedding provider is ollama")
+            payload = {
+                "model": model,
+                "input": text,
+                "truncate": True,
+                "dimensions": self.valves.EMBEDDING_DIMENSIONS,
+            }
+            response = self._post_json(
+                self.valves.OLLAMA_BASE_URL.rstrip("/") + "/api/embed",
+                payload,
+                timeout=self.valves.REQUEST_TIMEOUT_SECONDS,
+            )
+            embeddings = response.get("embeddings") or []
+            if not embeddings:
+                raise RuntimeError("Ollama returned no embeddings")
+            vector = embeddings[0]
+            self._validate_dimensions(vector)
+            return vector
+
+        if provider == "azure_openai":
+            if not self._clean_optional(self.valves.AZURE_OPENAI_BASE_URL):
+                raise RuntimeError("AZURE_OPENAI_BASE_URL must be set when embedding provider is azure_openai")
+            if not self._clean_optional(self.valves.AZURE_OPENAI_API_KEY):
+                raise RuntimeError("AZURE_OPENAI_API_KEY must be set when embedding provider is azure_openai")
+            payload = {
+                "model": model,
+                "input": text,
+                "dimensions": self.valves.EMBEDDING_DIMENSIONS,
+            }
+            response = self._post_json(
+                self.valves.AZURE_OPENAI_BASE_URL.rstrip("/") + "/embeddings",
+                payload,
+                headers={"api-key": self.valves.AZURE_OPENAI_API_KEY},
+                timeout=self.valves.REQUEST_TIMEOUT_SECONDS,
+            )
+            data = response.get("data") or []
+            if not data or "embedding" not in data[0]:
+                raise RuntimeError("Azure OpenAI returned no embeddings")
+            vector = data[0]["embedding"]
+            self._validate_dimensions(vector)
+            return vector
+
+        raise RuntimeError(f"Unsupported EMBEDDING_PROVIDER: {self.valves.EMBEDDING_PROVIDER}")
 
     def _validate_dimensions(self, vector: List[float]) -> None:
         if len(vector) != self.valves.EMBEDDING_DIMENSIONS:
@@ -1502,13 +1110,6 @@ class Pipeline:
         return (
             f"Based on the retrieved guidance for Clause {merged['clause_number']} under termset {merged['termset_number']}, "
             "the strongest support is:\n" + "\n".join(lines)
-        )
-
-    def _build_no_answer_message(self, merged: Dict[str, str]) -> str:
-        return (
-            "There is no information that answers this question from the clause search for "
-            f"Clause {merged['clause_number']} under termset {merged['termset_number']}. "
-            "Please elevate this question to your compliance lead."
         )
 
     def _post_json(
@@ -1534,8 +1135,7 @@ class Pipeline:
             raise RuntimeError(f"Error calling {url}: {exc}") from exc
 
     def _get_connection(self) -> psycopg.Connection:
-        database_url = self._require_config(self.valves.DATABASE_URL, "DATABASE_URL")
-        return psycopg.connect(database_url, row_factory=dict_row)
+        return psycopg.connect(self.valves.DATABASE_URL, row_factory=dict_row)
 
     def _table_identifier(self):
         return sql.Identifier(self._validate_table_name(self.valves.CHUNK_TABLE_NAME))
@@ -1549,34 +1149,72 @@ class Pipeline:
         key = (
             self.valves.DATABASE_URL,
             self.valves.CHUNK_TABLE_NAME,
+            self.valves.EMBEDDING_DIMENSIONS,
         )
         if key in self._schema_cache:
             return
 
         table_name = self._validate_table_name(self.valves.CHUNK_TABLE_NAME)
+        unique_idx = f"sc_chunks_uq_{hashlib.sha1(table_name.encode()).hexdigest()[:8]}"
+        filter_idx = f"sc_chunks_filter_{hashlib.sha1((table_name + '_f').encode()).hexdigest()[:8]}"
+        vector_idx = f"sc_chunks_hnsw_{hashlib.sha1((table_name + '_v').encode()).hexdigest()[:8]}"
+
         with self._get_connection() as conn:
             with conn.cursor() as cur:
+                cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
+                cur.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
                 cur.execute(
-                    """
-                    SELECT EXISTS (
-                        SELECT 1
-                        FROM pg_catalog.pg_class AS cls
-                        JOIN pg_catalog.pg_namespace AS ns
-                          ON ns.oid = cls.relnamespace
-                        WHERE cls.relkind IN ('r', 'p')
-                          AND cls.relname = %s
-                          AND ns.nspname = ANY(current_schemas(false))
+                    sql.SQL(
+                        """
+                        CREATE TABLE IF NOT EXISTS {table} (
+                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                            collection_name TEXT NOT NULL,
+                            external_id TEXT NOT NULL,
+                            clause_number TEXT NOT NULL,
+                            clause_number_norm TEXT NOT NULL,
+                            tc_number TEXT NOT NULL,
+                            tc_number_norm TEXT NOT NULL,
+                            topic TEXT,
+                            source_doc TEXT,
+                            section_title TEXT,
+                            chunk_text TEXT NOT NULL,
+                            guidance_text TEXT,
+                            metadata JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+                            embedding VECTOR({dimensions}) NOT NULL,
+                            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                        )
+                        """
+                    ).format(
+                        table=sql.Identifier(table_name),
+                        dimensions=sql.SQL(str(self.valves.EMBEDDING_DIMENSIONS)),
                     )
-                    """,
-                    (table_name,),
                 )
-                exists = cur.fetchone()
-
-        if not exists or not exists.get("exists"):
-            raise RuntimeError(
-                f"Vector table '{table_name}' is not provisioned. "
-                "This query pipeline is read-only; provision the table through the ingestion path before searching."
-            )
+                cur.execute(
+                    sql.SQL(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS {index_name} ON {table} (collection_name, external_id)"
+                    ).format(
+                        index_name=sql.Identifier(unique_idx),
+                        table=sql.Identifier(table_name),
+                    )
+                )
+                cur.execute(
+                    sql.SQL(
+                        "CREATE INDEX IF NOT EXISTS {index_name} ON {table} (collection_name, clause_number_norm, tc_number_norm)"
+                    ).format(
+                        index_name=sql.Identifier(filter_idx),
+                        table=sql.Identifier(table_name),
+                    )
+                )
+                cur.execute(
+                    sql.SQL(
+                        "CREATE INDEX IF NOT EXISTS {index_name} ON {table} USING hnsw (embedding vector_cosine_ops)"
+                    ).format(
+                        index_name=sql.Identifier(vector_idx),
+                        table=sql.Identifier(table_name),
+                    )
+                )
+            conn.commit()
 
         self._schema_cache.add(key)
 
