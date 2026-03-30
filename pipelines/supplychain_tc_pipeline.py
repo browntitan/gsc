@@ -55,6 +55,7 @@ class Pipeline:
         "summarize that",
     )
     RESET_CUES = ("reset", "start over", "clear context", "new search", "/reset")
+    LIST_CLAUSES_COMMAND = "list.clauses.and.termsets"
 
     class Valves(BaseModel):
         @model_validator(mode="before")
@@ -175,6 +176,38 @@ class Pipeline:
         current_text = self._message_text(user_messages[-1])
         if not current_text:
             yield "Please send a request with a clause number, a termset number, and your question."
+            return
+
+        if self._is_list_clauses_command(current_text):
+            yield self._status_details(
+                "Catalog",
+                (
+                    f"Listing clause numbers and associated termsets from collection "
+                    f"'{self.valves.DEFAULT_COLLECTION_NAME}'."
+                ),
+                done=False,
+            )
+            try:
+                rows = self._list_clause_termset_pairs(self.valves.DEFAULT_COLLECTION_NAME)
+            except Exception as exc:
+                yield self._status_details(
+                    "Error",
+                    f"Failed to list clauses and termsets: {exc}",
+                    done=True,
+                )
+                return
+            yield self._status_details(
+                "Done",
+                (
+                    f"Found {len(rows)} clause(s) in collection "
+                    f"'{self.valves.DEFAULT_COLLECTION_NAME}'."
+                ),
+                done=True,
+            )
+            yield self._render_clause_termset_catalog(
+                self.valves.DEFAULT_COLLECTION_NAME,
+                rows,
+            )
             return
 
         if self._is_reset(current_text):
@@ -339,6 +372,105 @@ class Pipeline:
     def _is_reset(self, text: str) -> bool:
         lowered = text.lower().strip()
         return any(cue in lowered for cue in self.RESET_CUES)
+
+    def _is_list_clauses_command(self, text: str) -> bool:
+        return self.LIST_CLAUSES_COMMAND in text.lower()
+
+    def _list_clause_termset_pairs(self, collection_name: str) -> List[Dict[str, Any]]:
+        table_name = self._validate_table_name(self.valves.CHUNK_TABLE_NAME)
+
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                try:
+                    cur.execute(
+                        sql.SQL(
+                            """
+                            SELECT
+                                clause_number,
+                                clause_number_norm,
+                                tc_number,
+                                tc_number_norm
+                            FROM {table}
+                            WHERE collection_name = %s
+                            ORDER BY
+                                clause_number_norm NULLS LAST,
+                                clause_number NULLS LAST,
+                                tc_number_norm NULLS LAST,
+                                tc_number NULLS LAST
+                            """
+                        ).format(table=sql.Identifier(table_name)),
+                        (collection_name,),
+                    )
+                except psycopg.errors.UndefinedTable as exc:
+                    raise RuntimeError(
+                        f"Vector table '{table_name}' does not exist. "
+                        "Provision the ingestion table before using the catalog command."
+                    ) from exc
+
+                rows = cur.fetchall()
+
+        grouped: Dict[str, Dict[str, Any]] = {}
+        for row in rows:
+            clause_norm = self._clean_optional(row.get("clause_number_norm"))
+            clause_display = self._clean_optional(row.get("clause_number")) or clause_norm
+            if not clause_norm and not clause_display:
+                continue
+
+            clause_key = clause_norm or clause_display or ""
+            entry = grouped.setdefault(
+                clause_key,
+                {
+                    "clause_number": clause_display or clause_key,
+                    "clause_number_norm": clause_norm or clause_key,
+                    "termsets": set(),
+                },
+            )
+
+            termset_norm = self._normalize_termset_number(row.get("tc_number_norm"))
+            termset_display = self._normalize_termset_number(row.get("tc_number")) or termset_norm
+            if termset_display:
+                entry["termsets"].add(termset_display)
+
+        def _clause_sort_key(item: Dict[str, Any]) -> tuple[int, Union[int, str]]:
+            value = item.get("clause_number_norm") or item.get("clause_number") or ""
+            try:
+                return (0, int(str(value)))
+            except ValueError:
+                return (1, str(value))
+
+        result: List[Dict[str, Any]] = []
+        for item in sorted(grouped.values(), key=_clause_sort_key):
+            result.append(
+                {
+                    "clause_number": item["clause_number"],
+                    "clause_number_norm": item["clause_number_norm"],
+                    "termsets": sorted(item["termsets"]),
+                }
+            )
+        return result
+
+    def _render_clause_termset_catalog(
+        self,
+        collection_name: str,
+        rows: List[Dict[str, Any]],
+    ) -> str:
+        if not rows:
+            return (
+                f"I did not find any clauses in collection '{collection_name}' "
+                f"within table '{self.valves.CHUNK_TABLE_NAME}'."
+            )
+
+        lines = [f"Clauses and associated termsets in collection '{collection_name}':", ""]
+        for row in rows:
+            clause_number = row.get("clause_number") or row.get("clause_number_norm") or "Unknown"
+            termsets = row.get("termsets") or []
+            if termsets:
+                lines.append(f"- Clause {clause_number}: {', '.join(termsets)}")
+            else:
+                lines.append(f"- Clause {clause_number}: no termset metadata found")
+
+        lines.extend(["", f"Total clauses: {len(rows)}"])
+        return "\n".join(lines)
 
     def _extract_fields(self, text: str) -> Dict[str, Optional[str]]:
         clause_matches = self.CLAUSE_RE.findall(text)
