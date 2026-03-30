@@ -56,6 +56,62 @@ class Pipeline:
     )
     RESET_CUES = ("reset", "start over", "clear context", "new search", "/reset")
     LIST_CLAUSES_COMMAND = "list.clauses.and.termsets"
+    SECTION_TARGET_DISPLAY = {
+        "intent": "Intent",
+        "common_exceptions": "Common Exceptions / Suggested Responses",
+        "suggested_responses": "Suggested Responses",
+    }
+    SECTION_TARGET_ALIASES = (
+        (
+            "suggested_responses",
+            (
+                "suggested responses",
+                "suggested response",
+                "how should we respond",
+                "what should we say",
+                "recommended response",
+                "recommended responses",
+                "issue/response",
+                "issue response",
+                "how do we respond",
+                "response to pushback",
+            ),
+        ),
+        (
+            "common_exceptions",
+            (
+                "common exceptions / suggested responses",
+                "common exceptions",
+                "supplier pushback",
+                "common edits",
+                "common edit",
+                "what do suppliers object to",
+                "what issues come up",
+                "common issues",
+                "supplier objections",
+                "pushback",
+            ),
+        ),
+        (
+            "intent",
+            (
+                "why does this clause exist",
+                "what is this clause for",
+                "why do we have this clause",
+                "why is this clause here",
+                "purpose",
+                "intent",
+            ),
+        ),
+    )
+    SECTION_FILTER_PATTERNS = {
+        "intent": ("intent%", "%| intent%"),
+        "common_exceptions": (
+            "common exceptions / suggested responses%",
+            "%| common exceptions / suggested responses%",
+        ),
+        "suggested_responses": ("suggested responses%", "%| suggested responses%"),
+    }
 
     class Valves(BaseModel):
         @model_validator(mode="before")
@@ -75,12 +131,12 @@ class Pipeline:
         DATABASE_URL: str = Field(
             default=os.getenv(
                 "DATABASE_URL",
-                "postgresql://openwebui:openwebui@postgres:5432/openwebui",
+                "postgresql://openweb:BrittandPatsAdventure22!@owui-dev-pgvector.postgres.database.usgovcloudapi.net:5432/owui_pgvector_dev",
             )
         )
-        CHUNK_TABLE_NAME: str = Field(default=os.getenv("CHUNK_TABLE_NAME", "supply_chain_chunks"))
+        CHUNK_TABLE_NAME: str = Field(default=os.getenv("CHUNK_TABLE_NAME", "gsc_vector_rag"))
         DEFAULT_COLLECTION_NAME: str = Field(
-            default=os.getenv("DEFAULT_COLLECTION_NAME", "GSC-Internal-Policy")
+            default=os.getenv("DEFAULT_COLLECTION_NAME", "gsc_vector_rag")
         )
         TOP_K: int = Field(default=int(os.getenv("TOP_K", "6")), ge=1, le=20)
         REQUEST_TIMEOUT_SECONDS: int = Field(
@@ -254,6 +310,31 @@ class Pipeline:
             yield self._build_missing_message(merged, missing)
             return
 
+        applicability = self._check_clause_termset_applicability(
+            collection_name=self.valves.DEFAULT_COLLECTION_NAME,
+            clause_number=merged["clause_number"],
+            termset_number=merged["termset_number"],
+        )
+        if applicability["clause_exists"] and applicability["applicable_termsets"] and not applicability["is_applicable"]:
+            applicable_termsets = ", ".join(applicability["applicable_termsets"])
+            yield self._status_details(
+                "Not Applicable",
+                (
+                    f"Clause {merged['clause_number']} exists in collection "
+                    f"'{self.valves.DEFAULT_COLLECTION_NAME}', but its metadata filters only show "
+                    f"applicable termset(s): {applicable_termsets}."
+                ),
+                done=True,
+            )
+            message = (
+                f"Clause {merged['clause_number']} is not applicable for termset "
+                f"{merged['termset_number']}."
+            )
+            if applicable_termsets:
+                message += f" Applicable termsets found in the clause metadata: {applicable_termsets}."
+            yield message
+            return
+
         status_decision = self._status_decision(
             decision=decision,
             current_text=current_text,
@@ -265,11 +346,18 @@ class Pipeline:
             yield self._status_details("Search", search_status, done=False)
 
         yield self._status_details(
-            "Retrieval",
-            (
-                f"Querying collection '{self.valves.DEFAULT_COLLECTION_NAME}' for Clause "
-                f"{merged['clause_number']} under termset {merged['termset_number']}."
+            "Extraction",
+            self._extraction_status_message(
+                current_text=current_text,
+                parsed=parsed,
+                merged=merged,
             ),
+            done=False,
+        )
+
+        yield self._status_details(
+            "Retrieval",
+            self._retrieval_status_message(merged),
             done=False,
         )
 
@@ -280,12 +368,27 @@ class Pipeline:
                 termset_number=merged["termset_number"],
                 query=merged["query_text"],
                 top_k=self.valves.TOP_K,
+                section_target=merged.get("section_target"),
             )
         except Exception as exc:  # noqa: BLE001
             message = f"Search failed before retrieval could complete: {exc}"
             yield self._status_details("Error", message, done=True)
             yield message
             return
+
+        if hits.get("fallback_used") and hits.get("requested_section_target"):
+            yield self._status_details(
+                "Retrieval",
+                (
+                    f"No hits in the requested "
+                    f"{self._section_target_label(hits['requested_section_target'])} section for Clause "
+                    f"{merged['clause_number']} under termset {merged['termset_number']}; "
+                    f"falling back to the full clause in collection '{self.valves.DEFAULT_COLLECTION_NAME}'."
+                ),
+                done=False,
+            )
+
+        hits = hits["hits"]
 
         if not hits:
             message = (
@@ -477,6 +580,7 @@ class Pipeline:
         label_termset_matches = self.TERMSET_LABEL_RE.findall(text)
         code_termset_matches = self.TERMSET_CODE_RE.findall(text)
         raw_termset_matches = [*label_termset_matches, *code_termset_matches]
+        section_target = self._detect_section_target(text)
 
         if len(clause_matches) > 1 and "compare" not in text.lower():
             raise ValueError(
@@ -530,6 +634,7 @@ class Pipeline:
             "clause_number": clause_number,
             "termset_number": termset_number,
             "query_text": query_text,
+            "section_target": section_target,
         }
 
     def _derive_prior_state(self, user_messages: List[dict]) -> Dict[str, Optional[str]]:
@@ -555,7 +660,12 @@ class Pipeline:
         return state
 
     def _empty_state(self) -> Dict[str, Optional[str]]:
-        return {"clause_number": None, "termset_number": None, "query_text": None}
+        return {
+            "clause_number": None,
+            "termset_number": None,
+            "query_text": None,
+            "section_target": None,
+        }
 
     def _should_use_extractor(self) -> bool:
         return (
@@ -592,11 +702,17 @@ class Pipeline:
         query_text = self._clean_query_text(
             preferred.get("query_text") or deterministic.get("query_text")
         )
+        section_candidate = self._normalize_section_target(preferred.get("section_target"))
+        deterministic_section = self._normalize_section_target(deterministic.get("section_target"))
+        if deterministic_section and section_candidate and section_candidate != deterministic_section:
+            section_candidate = deterministic_section
+        section_target = section_candidate or deterministic_section
 
         return {
             "clause_number": clause_number,
             "termset_number": termset_number,
             "query_text": query_text,
+            "section_target": section_target,
         }
 
     def _classify_turn(
@@ -672,6 +788,7 @@ class Pipeline:
             "clause_number": prior_state.get("clause_number"),
             "termset_number": prior_state.get("termset_number"),
             "query_text": prior_state.get("query_text"),
+            "section_target": prior_state.get("section_target"),
         }
 
         if parsed.get("clause_number"):
@@ -680,9 +797,14 @@ class Pipeline:
             merged["termset_number"] = parsed["termset_number"]
         if parsed.get("query_text"):
             merged["query_text"] = parsed["query_text"]
+        if parsed.get("section_target"):
+            merged["section_target"] = parsed["section_target"]
 
         if decision == "followup_explain" and not parsed.get("query_text"):
             merged["query_text"] = prior_state.get("query_text")
+            merged["section_target"] = prior_state.get("section_target")
+        elif decision in {"new_search", "same_context_new_query"} and not parsed.get("section_target"):
+            merged["section_target"] = None
 
         return merged
 
@@ -755,6 +877,55 @@ class Pipeline:
             )
         return ""
 
+    def _extraction_status_message(
+        self,
+        *,
+        current_text: str,
+        parsed: Dict[str, Optional[str]],
+        merged: Dict[str, Optional[str]],
+    ) -> str:
+        extracted_clause = parsed.get("clause_number") or "none"
+        extracted_termset = parsed.get("termset_number") or "none"
+        extracted_query = parsed.get("query_text") or "none"
+        extracted_section_target = self._section_target_label(parsed.get("section_target")) or "none"
+        filter_clause = merged.get("clause_number") or "none"
+        filter_termset = merged.get("termset_number") or "none"
+        active_query = merged.get("query_text") or "none"
+        requested_section_target = self._section_target_label(merged.get("section_target")) or "none"
+
+        return (
+            "Parsed the current message into filter inputs and query text.\n\n"
+            f"Current message: {current_text}\n"
+            f"Extracted clause: {extracted_clause}\n"
+            f"Extracted termset: {extracted_termset}\n"
+            f"Extracted query: {extracted_query}\n"
+            f"Extracted section target: {extracted_section_target}\n"
+            f"Applied clause filter: {filter_clause}\n"
+            f"Applied termset filter: {filter_termset}\n"
+            f"Requested section target: {requested_section_target}\n"
+            f"Semantic query text: {active_query}"
+        )
+
+    def _retrieval_status_message(self, merged: Dict[str, Optional[str]]) -> str:
+        section_target = self._section_target_label(merged.get("section_target"))
+        if section_target:
+            return (
+                f"Searching the {section_target} section first for Clause "
+                f"{merged['clause_number']} under termset {merged['termset_number']} "
+                f"in collection '{self.valves.DEFAULT_COLLECTION_NAME}'."
+            )
+        return (
+            f"Querying collection '{self.valves.DEFAULT_COLLECTION_NAME}' for Clause "
+            f"{merged['clause_number']} under termset {merged['termset_number']}."
+        )
+
+    def _detect_section_target(self, text: str) -> Optional[str]:
+        lowered = text.lower()
+        for section_target, phrases in self.SECTION_TARGET_ALIASES:
+            if any(phrase in lowered for phrase in phrases):
+                return section_target
+        return None
+
     def _extract_with_llm(
         self,
         current_text: str,
@@ -767,9 +938,18 @@ class Pipeline:
                 "content": (
                     "Extract structured fields for a supply-chain internal policy retrieval workflow. "
                     "The user may refer to a termset as 'termset', 'termet', 'T&C', or a full code like CTM-P-ST-001. "
-                    "Return JSON only with keys: clause_number, termset_number, query_text, intent, has_required_inputs. "
+                    "Return JSON only with keys: clause_number, termset_number, query_text, section_target, intent, has_required_inputs. "
                     "Intent must be one of followup_explain, new_search, identifier_update, same_context_new_query, collect_or_search. "
-                    "Use null when a field cannot be confidently extracted."
+                    "section_target must be one of: intent, common_exceptions, suggested_responses, none. "
+                    "Use null when a field cannot be confidently extracted. "
+                    "Rewrite query_text for vector similarity search instead of copying the full question. "
+                    "Remove clause numbers, termset references, question framing, and filler words. "
+                    "Keep the core policy topic as a short semantic phrase that would match policy text. "
+                    "Do not end query_text with trailing prepositions or filler such as 'for', 'about', 'under', or 'of'. "
+                    "Examples: "
+                    "'What does clause 3 say about indemnity for termset 2?' -> 'indemnity provisions'; "
+                    "'Now check clause 8 for termset 4 about delivery timing' -> 'delivery timing'; "
+                    "'Explain clause 5 for termset 1 about insurance requirements' -> 'insurance requirements'."
                 ),
             },
             {
@@ -807,9 +987,13 @@ class Pipeline:
                 "role": "system",
                 "content": (
                     "Format and normalize retrieval inputs for a supply-chain internal policy assistant. "
-                    "Return JSON only with keys: clause_number, termset_number, query_text, intent, has_required_inputs. "
+                    "Return JSON only with keys: clause_number, termset_number, query_text, section_target, intent, has_required_inputs. "
                     "Normalize termset_number to a three-digit string when possible, such as 1 -> 001 or CTM-P-ST-001 -> 001. "
-                    "Keep query_text concise and searchable. "
+                    "Normalize section_target to one of: intent, common_exceptions, suggested_responses, none. "
+                    "Rewrite query_text for vector similarity search as a concise semantic phrase, not a conversational question. "
+                    "Prefer a short topical phrase like 'indemnity provisions', 'delivery timing', or 'inspection criteria'. "
+                    "Remove clause references, termset references, question framing, and trailing filler words. "
+                    "Do not let query_text end with words like 'for', 'about', 'under', or 'of'. "
                     "If you are unsure, preserve the deterministic hints."
                 ),
             },
@@ -842,7 +1026,7 @@ class Pipeline:
             return {}
 
         result: Dict[str, Optional[Any]] = {}
-        for key in ("clause_number", "termset_number", "query_text", "intent"):
+        for key in ("clause_number", "termset_number", "query_text", "section_target", "intent"):
             value = data.get(key)
             if isinstance(value, str):
                 value = value.strip() or None
@@ -893,6 +1077,87 @@ class Pipeline:
             "reason": self._clean_optional(data.get("reason")),
         }
 
+    def _check_clause_termset_applicability(
+        self,
+        *,
+        collection_name: str,
+        clause_number: str,
+        termset_number: str,
+    ) -> Dict[str, Any]:
+        self._ensure_schema()
+        table = self._table_identifier()
+        query_sql = sql.SQL(
+            """
+            SELECT
+                tc_number,
+                tc_number_norm,
+                metadata
+            FROM {table}
+            WHERE collection_name = %s
+              AND clause_number_norm = %s
+            """
+        ).format(table=table)
+
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    query_sql,
+                    (
+                        collection_name,
+                        self._normalize_identifier(clause_number),
+                    ),
+                )
+                rows = cur.fetchall()
+
+        applicable_termsets = sorted(self._collect_applicable_termsets(rows))
+        normalized_requested = self._normalize_termset_number(termset_number)
+        return {
+            "clause_exists": bool(rows),
+            "applicable_termsets": applicable_termsets,
+            "is_applicable": (
+                normalized_requested in applicable_termsets
+                if normalized_requested and applicable_termsets
+                else True
+            ),
+        }
+
+    def _collect_applicable_termsets(self, rows: List[Dict[str, Any]]) -> set[str]:
+        applicable_termsets: set[str] = set()
+        for row in rows:
+            metadata = row.get("metadata") or {}
+            if isinstance(metadata, str):
+                try:
+                    metadata = json.loads(metadata)
+                except Exception:
+                    metadata = {}
+            if not isinstance(metadata, dict):
+                metadata = {}
+
+            candidates: List[Any] = [
+                row.get("tc_number"),
+                row.get("tc_number_norm"),
+                metadata.get("termset_number"),
+            ]
+
+            all_termsets = metadata.get("all_applicable_termsets")
+            if isinstance(all_termsets, list):
+                candidates.extend(all_termsets)
+            elif all_termsets is not None:
+                candidates.append(all_termsets)
+
+            all_codes = metadata.get("all_applicable_termset_codes")
+            if isinstance(all_codes, list):
+                candidates.extend(all_codes)
+            elif all_codes is not None:
+                candidates.append(all_codes)
+
+            for candidate in candidates:
+                normalized = self._normalize_termset_number(candidate)
+                if normalized:
+                    applicable_termsets.add(normalized)
+
+        return applicable_termsets
+
     def _search_guidance(
         self,
         *,
@@ -901,10 +1166,96 @@ class Pipeline:
         termset_number: str,
         query: str,
         top_k: int,
+        section_target: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        normalized_section_target = self._normalize_section_target(section_target)
+        if normalized_section_target:
+            section_hits = self._search_guidance_rows(
+                collection_name=collection_name,
+                clause_number=clause_number,
+                termset_number=termset_number,
+                query=query,
+                top_k=top_k,
+                section_target=normalized_section_target,
+            )
+            if section_hits:
+                return {
+                    "hits": section_hits,
+                    "requested_section_target": normalized_section_target,
+                    "applied_section_target": normalized_section_target,
+                    "fallback_used": False,
+                }
+
+            return {
+                "hits": self._search_guidance_rows(
+                    collection_name=collection_name,
+                    clause_number=clause_number,
+                    termset_number=termset_number,
+                    query=query,
+                    top_k=top_k,
+                    section_target=None,
+                ),
+                "requested_section_target": normalized_section_target,
+                "applied_section_target": None,
+                "fallback_used": True,
+            }
+
+        return {
+            "hits": self._search_guidance_rows(
+                collection_name=collection_name,
+                clause_number=clause_number,
+                termset_number=termset_number,
+                query=query,
+                top_k=top_k,
+                section_target=None,
+            ),
+            "requested_section_target": None,
+            "applied_section_target": None,
+            "fallback_used": False,
+        }
+
+    def _search_guidance_rows(
+        self,
+        *,
+        collection_name: str,
+        clause_number: str,
+        termset_number: str,
+        query: str,
+        top_k: int,
+        section_target: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         self._ensure_schema()
         query_embedding = self._embed_text(query)
         table = self._table_identifier()
+        vec = self._vector_literal(query_embedding)
+        filters = [
+            sql.SQL("collection_name = %s"),
+            sql.SQL("clause_number_norm = %s"),
+            sql.SQL("tc_number_norm = %s"),
+        ]
+        params: List[Any] = [
+            vec,
+            collection_name,
+            self._normalize_identifier(clause_number),
+            self._normalize_identifier(termset_number),
+        ]
+
+        section_patterns = self._section_filter_patterns(section_target)
+        if section_patterns:
+            section_conditions = []
+            for pattern in section_patterns:
+                section_conditions.append(
+                    sql.SQL("LOWER(COALESCE(metadata->>'segment_title', '')) LIKE %s")
+                )
+                params.append(pattern)
+                section_conditions.append(
+                    sql.SQL("LOWER(COALESCE(section_title, '')) LIKE %s")
+                )
+                params.append(pattern)
+            filters.append(
+                sql.SQL("(") + sql.SQL(" OR ").join(section_conditions) + sql.SQL(")")
+            )
+
         query_sql = sql.SQL(
             """
             SELECT
@@ -921,28 +1272,19 @@ class Pipeline:
                 metadata,
                 1 - (embedding <=> %s::vector) AS score
             FROM {table}
-            WHERE collection_name = %s
-              AND clause_number_norm = %s
-              AND tc_number_norm = %s
+            WHERE {filters}
             ORDER BY embedding <=> %s::vector
             LIMIT %s
             """
-        ).format(table=table)
+        ).format(
+            table=table,
+            filters=sql.SQL(" AND ").join(filters),
+        )
+        params.extend([vec, top_k])
 
-        vec = self._vector_literal(query_embedding)
         with self._get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    query_sql,
-                    (
-                        vec,
-                        collection_name,
-                        self._normalize_identifier(clause_number),
-                        self._normalize_identifier(termset_number),
-                        vec,
-                        top_k,
-                    ),
-                )
+                cur.execute(query_sql, params)
                 return cur.fetchall()
 
     def _assess_answerability(
@@ -985,6 +1327,7 @@ class Pipeline:
                     f"Collection: {collection_name}\n"
                     f"Clause Number: {merged['clause_number']}\n"
                     f"Termset Number: {merged['termset_number']}\n"
+                    f"Section Focus: {self._section_target_label(merged.get('section_target')) or 'none'}\n"
                     f"Active question: {merged['query_text']}\n"
                     f"Current user message: {user_text}\n\n"
                     f"Retrieved guidance:\n\n" + "\n\n".join(source_blocks)
@@ -1048,6 +1391,7 @@ class Pipeline:
             f"- Collection: {collection_name}\n"
             f"- Clause Number: {merged['clause_number']}\n"
             f"- Termset Number: {merged['termset_number']}\n"
+            f"- Section Focus: {self._section_target_label(merged.get('section_target')) or 'none'}\n"
             f"- Active question: {merged['query_text']}\n"
             f"- Current user message: {user_text}\n\n"
             f"Retrieved guidance:\n\n" + "\n\n".join(source_blocks)
@@ -1137,7 +1481,52 @@ class Pipeline:
         if not cleaned:
             return None
         cleaned = re.sub(r"\s+", " ", cleaned).strip(" -:,.?")
+        trailing_fillers = (
+            "for",
+            "about",
+            "under",
+            "of",
+            "to",
+            "on",
+            "in",
+            "regarding",
+            "concerning",
+        )
+        trailing_pattern = r"(?i)\b(?:" + "|".join(trailing_fillers) + r")\b\s*$"
+        while cleaned:
+            updated = re.sub(trailing_pattern, "", cleaned).strip(" -:,.?")
+            if updated == cleaned:
+                break
+            cleaned = updated
         return cleaned or None
+
+    def _normalize_section_target(self, value: Optional[Any]) -> Optional[str]:
+        cleaned = self._clean_optional(value)
+        if not cleaned:
+            return None
+
+        lowered = cleaned.lower()
+        if lowered in {"none", "null", "no_section"}:
+            return None
+        if "suggested" in lowered and "response" in lowered:
+            return "suggested_responses"
+        if "common exception" in lowered or "supplier pushback" in lowered or "common edit" in lowered:
+            return "common_exceptions"
+        if "intent" in lowered or "purpose" in lowered:
+            return "intent"
+        return None
+
+    def _section_target_label(self, section_target: Optional[str]) -> Optional[str]:
+        normalized = self._normalize_section_target(section_target)
+        if not normalized:
+            return None
+        return self.SECTION_TARGET_DISPLAY.get(normalized)
+
+    def _section_filter_patterns(self, section_target: Optional[str]) -> List[str]:
+        normalized = self._normalize_section_target(section_target)
+        if not normalized:
+            return []
+        return [pattern.lower() for pattern in self.SECTION_FILTER_PATTERNS.get(normalized, ())]
 
     def _require_config(self, value: Optional[Any], name: str) -> str:
         cleaned = self._clean_optional(value)

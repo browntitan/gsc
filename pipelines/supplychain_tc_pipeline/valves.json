@@ -1,8 +1,8 @@
 {
   "NAME": "Supply Chain Internal Policy Pipeline",
-  "DATABASE_URL": "",
-  "CHUNK_TABLE_NAME": "supply_chain_chunks",
-  "DEFAULT_COLLECTION_NAME": "GSC-Internal-Policy",
+  "DATABASE_URL": "postgresql://openweb:BrittandPatsAdventure22!@owui-dev-pgvector.postgres.database.usgovcloudapi.net:5432/owui_pgvector_dev",
+  "CHUNK_TABLE_NAME": "gsc_vector_rag",
+  "DEFAULT_COLLECTION_NAME": "gsc_vector_rag",
   "TOP_K": 6,
   "REQUEST_TIMEOUT_SECONDS": 120,
   "ROUTER_MODE": "extractor_assisted",
