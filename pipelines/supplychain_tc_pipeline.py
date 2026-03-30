@@ -15,7 +15,6 @@ import json
 import os
 import re
 from typing import Any, Dict, Generator, List, Optional, Union
-from urllib import error, request
 
 import httpx
 import requests
@@ -100,45 +99,23 @@ class Pipeline:
             ge=5,
             le=300,
         )
-
-        ANSWER_PROVIDER: str = Field(default=os.getenv("ANSWER_PROVIDER", "ollama"))
-        ANSWER_MODEL: str = Field(default=os.getenv("ANSWER_MODEL", "gpt-oss:20b"))
-        EMBEDDING_PROVIDER: str = Field(default=os.getenv("EMBEDDING_PROVIDER", "ollama"))
-        EMBEDDING_MODEL: str = Field(default=os.getenv("EMBEDDING_MODEL", ""))
         EMBEDDING_DIMENSIONS: int = Field(
-            default=int(os.getenv("EMBEDDING_DIMENSIONS", "768")),
+            default=int(os.getenv("EMBEDDING_DIMENSIONS", "1536")),
             ge=1,
         )
-
-        EXTRACTOR_PROVIDER: str = Field(default=os.getenv("EXTRACTOR_PROVIDER", "ollama"))
-        EXTRACTOR_MODEL: str = Field(default=os.getenv("EXTRACTOR_MODEL", "gpt-oss:20b"))
-        FORMATTER_PROVIDER: str = Field(default=os.getenv("FORMATTER_PROVIDER", "ollama"))
-        FORMATTER_MODEL: str = Field(default=os.getenv("FORMATTER_MODEL", "gpt-oss:20b"))
-
-        OLLAMA_BASE_URL: str = Field(
-            default=os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
-        )
-        OLLAMA_CHAT_MODEL: str = Field(default=os.getenv("OLLAMA_CHAT_MODEL", "gpt-oss:20b"))
-        OLLAMA_EMBED_MODEL: str = Field(default=os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text"))
         AZURE_OPENAI_ENDPOINT: str = Field(
-            default=os.getenv("AZURE_OPENAI_ENDPOINT", os.getenv("AZURE_OPENAI_BASE_URL", ""))
+            default=os.getenv("AZURE_OPENAI_ENDPOINT", "https://aiml-aoai-api.gc1.myngc.com")
         )
         AZURE_OPENAI_DEPLOYMENT_NAME: str = Field(
-            default=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", os.getenv("AZURE_OPENAI_CHAT_MODEL", ""))
+            default=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o-mini")
         )
         AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME: str = Field(
-            default=os.getenv(
-                "AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME",
-                os.getenv("AZURE_OPENAI_EMBED_MODEL", ""),
-            )
+            default=os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME", "text-embedding-ada-002")
         )
         AZURE_OPENAI_API_VERSION: str = Field(
-            default=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01")
+            default=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
         )
-        AZURE_OPENAI_BASE_URL: str = Field(default=os.getenv("AZURE_OPENAI_BASE_URL", ""))
         AZURE_OPENAI_API_KEY: str = Field(default=os.getenv("AZURE_OPENAI_API_KEY", ""))
-        AZURE_OPENAI_CHAT_MODEL: str = Field(default=os.getenv("AZURE_OPENAI_CHAT_MODEL", ""))
-        AZURE_OPENAI_EMBED_MODEL: str = Field(default=os.getenv("AZURE_OPENAI_EMBED_MODEL", ""))
 
     def __init__(self):
         self.id = "supplychain_tc_pipeline"
@@ -293,6 +270,20 @@ class Pipeline:
                 done=True,
             )
             yield message
+            return
+
+        answerability = self._assess_answerability(
+            merged=merged,
+            user_text=current_text,
+            hits=hits,
+            collection_name=self.valves.DEFAULT_COLLECTION_NAME,
+        )
+        if answerability.get("answerable") is False:
+            reason = self._clean_optional(answerability.get("reason")) or (
+                "Retrieved clause guidance was reviewed, but it does not answer the user's question."
+            )
+            yield self._status_details("No Answer", reason, done=True)
+            yield self._build_no_answer_message(merged)
             return
 
         provenance_notice = self._provenance_notice(hits)
@@ -662,13 +653,7 @@ class Pipeline:
         ]
 
         try:
-            provider = self._resolve_provider(
-                self.valves.EXTRACTOR_PROVIDER,
-                fallback=self.valves.ANSWER_PROVIDER,
-            )
             raw = self._chat_completion(
-                provider=provider,
-                model=self._resolve_chat_model(provider, self.valves.EXTRACTOR_MODEL, "extractor"),
                 messages=messages,
                 temperature=0.0,
                 timeout=self.valves.EXTRACTOR_TIMEOUT_SECONDS,
@@ -710,17 +695,7 @@ class Pipeline:
         ]
 
         try:
-            provider = self._resolve_provider(
-                self.valves.FORMATTER_PROVIDER,
-                fallback=self.valves.EXTRACTOR_PROVIDER or self.valves.ANSWER_PROVIDER,
-            )
             raw = self._chat_completion(
-                provider=provider,
-                model=self._resolve_chat_model(
-                    provider,
-                    self.valves.FORMATTER_MODEL or self.valves.EXTRACTOR_MODEL,
-                    "formatter",
-                ),
                 messages=messages,
                 temperature=0.0,
                 timeout=self.valves.EXTRACTOR_TIMEOUT_SECONDS,
@@ -730,16 +705,8 @@ class Pipeline:
             return {}
 
     def _parse_json_object(self, raw: str) -> Dict[str, Optional[Any]]:
-        text = raw.strip()
-        if text.startswith("```"):
-            text = re.sub(r"^```(?:json)?\s*", "", text)
-            text = re.sub(r"\s*```$", "", text)
-        match = re.search(r"\{.*\}", text, flags=re.DOTALL)
-        if not match:
-            return {}
-        try:
-            data = json.loads(match.group(0))
-        except json.JSONDecodeError:
+        data = self._extract_json_dict(raw)
+        if not data:
             return {}
 
         result: Dict[str, Optional[Any]] = {}
@@ -759,6 +726,40 @@ class Pipeline:
         else:
             result["has_required_inputs"] = None
         return result
+
+    def _extract_json_dict(self, raw: str) -> Dict[str, Any]:
+        text = raw.strip()
+        if text.startswith("```"):
+            text = re.sub(r"^```(?:json)?\s*", "", text)
+            text = re.sub(r"\s*```$", "", text)
+        match = re.search(r"\{.*\}", text, flags=re.DOTALL)
+        if not match:
+            return {}
+        try:
+            data = json.loads(match.group(0))
+        except json.JSONDecodeError:
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def _parse_bool_like(self, value: Any) -> Optional[bool]:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "yes", "on"}:
+                return True
+            if normalized in {"0", "false", "no", "off"}:
+                return False
+        return None
+
+    def _parse_answerability_result(self, raw: str) -> Dict[str, Optional[Any]]:
+        data = self._extract_json_dict(raw)
+        if not data:
+            return {"answerable": None, "reason": None}
+        return {
+            "answerable": self._parse_bool_like(data.get("answerable")),
+            "reason": self._clean_optional(data.get("reason")),
+        }
 
     def _search_guidance(
         self,
@@ -812,6 +813,63 @@ class Pipeline:
                 )
                 return cur.fetchall()
 
+    def _assess_answerability(
+        self,
+        *,
+        merged: Dict[str, str],
+        user_text: str,
+        hits: List[dict],
+        collection_name: str,
+    ) -> Dict[str, Optional[Any]]:
+        source_blocks = []
+        for idx, hit in enumerate(hits[: min(5, len(hits))], start=1):
+            snippet = self._clean_optional(hit.get("chunk_text") or hit.get("guidance_text")) or ""
+            snippet = re.sub(r"\s+", " ", snippet)
+            if len(snippet) > 500:
+                snippet = snippet[:497].rstrip() + "..."
+            try:
+                score = round(float(hit.get("score", 0.0)), 4)
+            except (TypeError, ValueError):
+                score = "unknown"
+            source_blocks.append(
+                f"[S{idx}] section={hit.get('section_title', 'untitled')} "
+                f"termset={hit.get('tc_number', 'unknown')} "
+                f"score={score}\n{snippet}"
+            )
+
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are validating whether retrieved clause-search evidence actually answers a user's question. "
+                    "Return JSON only with keys: answerable, reason. "
+                    "Set answerable to false unless the retrieved evidence directly and materially answers the user's question. "
+                    "If the evidence is only related, partial, generic, or does not address the asked point, answerable must be false."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Collection: {collection_name}\n"
+                    f"Clause Number: {merged['clause_number']}\n"
+                    f"Termset Number: {merged['termset_number']}\n"
+                    f"Active question: {merged['query_text']}\n"
+                    f"Current user message: {user_text}\n\n"
+                    f"Retrieved guidance:\n\n" + "\n\n".join(source_blocks)
+                ),
+            },
+        ]
+
+        try:
+            raw = self._chat_completion(
+                messages=messages,
+                temperature=0.0,
+                timeout=self.valves.REQUEST_TIMEOUT_SECONDS,
+            )
+            return self._parse_answerability_result(raw)
+        except Exception:
+            return {"answerable": None, "reason": None}
+
     def _build_grounding_messages(
         self,
         merged: Dict[str, str],
@@ -842,7 +900,9 @@ class Pipeline:
         system = (
             "You are an internal supply-chain policy guidance assistant. "
             "Answer only from the retrieved guidance below. "
-            "If the evidence is insufficient, say so clearly. "
+            "If the evidence is insufficient, answer exactly: "
+            "'There is no information that answers this question from the clause search. "
+            "Please elevate this question to your compliance lead.' "
             "If a retrieved source directly states the answer, summarize it plainly instead of saying the text is missing. "
             "If a source includes visible wording plus [unclear] markers, use the visible wording and note only the unclear tail if it matters. "
             "For chunks that contain 'Issue:' and 'Response:', treat the Response text as the primary answer. "
@@ -928,10 +988,7 @@ class Pipeline:
         return "\n".join(lines).rstrip()
 
     def _generate_answer(self, messages: List[dict]) -> str:
-        provider = self._resolve_provider(self.valves.ANSWER_PROVIDER)
         return self._chat_completion(
-            provider=provider,
-            model=self._resolve_chat_model(provider, self.valves.ANSWER_MODEL, "answer"),
             messages=messages,
             temperature=0.1,
             timeout=self.valves.REQUEST_TIMEOUT_SECONDS,
@@ -957,13 +1014,7 @@ class Pipeline:
         return cleaned
 
     def _azure_endpoint_root(self) -> str:
-        endpoint = self._clean_optional(self.valves.AZURE_OPENAI_ENDPOINT) or self._clean_optional(
-            self.valves.AZURE_OPENAI_BASE_URL
-        )
-        endpoint = self._require_config(
-            endpoint,
-            "AZURE_OPENAI_ENDPOINT",
-        ).rstrip("/")
+        endpoint = self._require_config(self.valves.AZURE_OPENAI_ENDPOINT, "AZURE_OPENAI_ENDPOINT").rstrip("/")
         if "/openai/" in endpoint.lower():
             endpoint = endpoint[: endpoint.lower().index("/openai/")]
         return endpoint.rstrip("/")
@@ -977,13 +1028,21 @@ class Pipeline:
             "Content-Type": "application/json",
         }
 
-    def _azure_chat_url(self, deployment: str) -> str:
+    def _azure_chat_url(self) -> str:
+        deployment = self._require_config(
+            self.valves.AZURE_OPENAI_DEPLOYMENT_NAME,
+            "AZURE_OPENAI_DEPLOYMENT_NAME",
+        )
         return (
             f"{self._azure_endpoint_root()}/openai/deployments/{deployment}/chat/completions"
             f"?api-version={self._azure_api_version()}"
         )
 
-    def _azure_embedding_url(self, deployment: str) -> str:
+    def _azure_embedding_url(self) -> str:
+        deployment = self._require_config(
+            self.valves.AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME,
+            "AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME",
+        )
         return (
             f"{self._azure_endpoint_root()}/openai/deployments/{deployment}/embeddings"
             f"?api-version={self._azure_api_version()}"
@@ -997,183 +1056,92 @@ class Pipeline:
         timeout: int = 120,
         verify: bool = False,
     ) -> dict:
-        response = requests.post(
-            url=url,
-            json=payload,
-            headers={"Content-Type": "application/json", **(headers or {})},
-            timeout=timeout,
-            verify=verify,
-        )
+        try:
+            response = requests.post(
+                url=url,
+                json=payload,
+                headers={"Content-Type": "application/json", **(headers or {})},
+                timeout=timeout,
+                verify=verify,
+            )
+        except Exception as exc:
+            raise RuntimeError(f"Error calling {url}: {exc}") from exc
         try:
             response.raise_for_status()
         except Exception as exc:
-            raise RuntimeError(f"HTTP {response.status_code} from {url}: {response.text}") from exc
+            message = f"HTTP {response.status_code} from {url}: {response.text}"
+            if response.status_code == 404:
+                message += (
+                    " Verify AZURE_OPENAI_ENDPOINT is the endpoint root, "
+                    "AZURE_OPENAI_DEPLOYMENT_NAME is correct, and AZURE_OPENAI_API_VERSION is supported."
+                )
+            raise RuntimeError(message) from exc
         try:
             return response.json()
         except Exception as exc:
             raise RuntimeError(f"Error decoding JSON from {url}: {exc}") from exc
 
-    def _resolve_provider(self, value: Optional[str], fallback: str = "ollama") -> str:
-        raw = self._clean_optional(value) or fallback
-        normalized = raw.strip().lower().replace("-", "_").replace(" ", "_")
-        aliases = {
-            "ollama": "ollama",
-            "azure_openai": "azure_openai",
-            "azure": "azure_openai",
-            "openai_azure": "azure_openai",
-        }
-        provider = aliases.get(normalized)
-        if not provider:
-            raise RuntimeError(
-                f"Unsupported provider '{raw}'. Use 'ollama' or 'azure_openai'."
-            )
-        return provider
-
-    def _resolve_chat_model(self, provider: str, override: Optional[str], role: str) -> str:
-        explicit = self._clean_optional(override)
-        if explicit:
-            return explicit
-
-        if provider == "ollama":
-            model = self._clean_optional(self.valves.OLLAMA_CHAT_MODEL)
-            if model:
-                return model
-            raise RuntimeError(f"OLLAMA_CHAT_MODEL must be set when {role} provider is ollama")
-
-        if provider == "azure_openai":
-            model = self._clean_optional(self.valves.AZURE_OPENAI_DEPLOYMENT_NAME) or self._clean_optional(
-                self.valves.AZURE_OPENAI_CHAT_MODEL
-            )
-            if model:
-                return model
-            raise RuntimeError(
-                f"AZURE_OPENAI_DEPLOYMENT_NAME must be set when {role} provider is azure_openai"
-            )
-
-        raise RuntimeError(f"Unsupported provider: {provider}")
-
-    def _resolve_embedding_model(self, provider: str, override: Optional[str]) -> str:
-        explicit = self._clean_optional(override)
-        if explicit:
-            return explicit
-
-        if provider == "ollama":
-            model = self._clean_optional(self.valves.OLLAMA_EMBED_MODEL)
-            if model:
-                return model
-            raise RuntimeError("OLLAMA_EMBED_MODEL must be set when embedding provider is ollama")
-
-        if provider == "azure_openai":
-            model = self._clean_optional(
-                self.valves.AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME
-            ) or self._clean_optional(self.valves.AZURE_OPENAI_EMBED_MODEL)
-            if model:
-                return model
-            raise RuntimeError(
-                "AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME must be set when embedding provider is azure_openai"
-            )
-
-        raise RuntimeError(f"Unsupported provider: {provider}")
-
     def _chat_completion(
         self,
         *,
-        provider: str,
-        model: str,
         messages: List[dict],
         temperature: float,
         timeout: int,
     ) -> str:
-        if provider == "ollama":
-            if not self._clean_optional(self.valves.OLLAMA_BASE_URL):
-                raise RuntimeError("OLLAMA_BASE_URL must be set when using ollama")
-            payload = {
-                "model": model,
-                "messages": messages,
-                "stream": False,
-                "options": {"temperature": temperature},
-            }
-            response = self._post_json(
-                self.valves.OLLAMA_BASE_URL.rstrip("/") + "/api/chat",
-                payload,
-                timeout=timeout,
-            )
-            content = (response.get("message") or {}).get("content", "").strip()
-            if not content:
-                raise RuntimeError("Ollama returned an empty response")
-            return content
-
-        if provider == "azure_openai":
-            payload = {
-                "messages": messages,
-                "temperature": temperature,
-            }
-            response = self._post_json_requests(
-                self._azure_chat_url(model),
-                payload,
-                headers=self._azure_headers(),
-                timeout=timeout,
-                verify=False,
-            )
-            choices = response.get("choices") or []
-            if not choices:
-                raise RuntimeError("Azure OpenAI returned no choices")
-            content = (choices[0].get("message") or {}).get("content", "").strip()
-            if not content:
-                raise RuntimeError("Azure OpenAI returned empty content")
-            return content
-
-        raise RuntimeError(f"Unsupported provider: {provider}")
+        payload = {
+            "messages": messages,
+            "temperature": temperature,
+        }
+        response = self._post_json_requests(
+            self._azure_chat_url(),
+            payload,
+            headers=self._azure_headers(),
+            timeout=timeout,
+            verify=False,
+        )
+        choices = response.get("choices") or []
+        if not choices:
+            raise RuntimeError("Azure OpenAI returned no choices")
+        content = (choices[0].get("message") or {}).get("content", "").strip()
+        if not content:
+            raise RuntimeError("Azure OpenAI returned empty content")
+        return content
 
     def _embed_text(self, text: str) -> List[float]:
-        provider = self._resolve_provider(self.valves.EMBEDDING_PROVIDER)
-        model = self._resolve_embedding_model(provider, self.valves.EMBEDDING_MODEL)
-        if provider == "ollama":
-            if not self._clean_optional(self.valves.OLLAMA_BASE_URL):
-                raise RuntimeError("OLLAMA_BASE_URL must be set when embedding provider is ollama")
-            payload = {
-                "model": model,
-                "input": text,
-                "truncate": True,
-                "dimensions": self.valves.EMBEDDING_DIMENSIONS,
-            }
-            response = self._post_json(
-                self.valves.OLLAMA_BASE_URL.rstrip("/") + "/api/embed",
-                payload,
-                timeout=self.valves.REQUEST_TIMEOUT_SECONDS,
-            )
-            embeddings = response.get("embeddings") or []
-            if not embeddings:
-                raise RuntimeError("Ollama returned no embeddings")
-            vector = embeddings[0]
-            self._validate_dimensions(vector)
-            return vector
+        deployment = self._require_config(
+            self.valves.AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME,
+            "AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME",
+        )
+        os.environ["AZURE_OPENAI_API_KEY"] = self._require_config(
+            self.valves.AZURE_OPENAI_API_KEY,
+            "AZURE_OPENAI_API_KEY",
+        )
+        os.environ["AZURE_OPENAI_ENDPOINT"] = self._azure_endpoint_root()
 
-        if provider == "azure_openai":
-            os.environ["AZURE_OPENAI_API_KEY"] = self._require_config(
-                self.valves.AZURE_OPENAI_API_KEY,
-                "AZURE_OPENAI_API_KEY",
+        httpx_client = httpx.Client(
+            http2=True,
+            verify=False,
+            timeout=self.valves.REQUEST_TIMEOUT_SECONDS,
+        )
+        try:
+            embeddings = AzureOpenAIEmbeddings(
+                azure_deployment=deployment,
+                api_version=self._azure_api_version(),
+                http_client=httpx_client,
             )
-            os.environ["AZURE_OPENAI_ENDPOINT"] = self._azure_endpoint_root()
-
-            httpx_client = httpx.Client(
-                http2=True,
-                verify=False,
-                timeout=self.valves.REQUEST_TIMEOUT_SECONDS,
-            )
-            try:
-                embeddings = AzureOpenAIEmbeddings(
-                    azure_deployment=model,
-                    api_version=self._azure_api_version(),
-                    http_client=httpx_client,
+            vector = embeddings.embed_query(text)
+        except Exception as exc:
+            message = f"Error calling {self._azure_embedding_url()}: {exc}"
+            if "404" in str(exc) or "resource not found" in str(exc).lower():
+                message += (
+                    " Verify AZURE_OPENAI_ENDPOINT is the endpoint root, "
+                    "AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME is correct, and AZURE_OPENAI_API_VERSION is supported."
                 )
-                vector = embeddings.embed_query(text)
-            finally:
-                httpx_client.close()
-            self._validate_dimensions(vector)
-            return vector
-
-        raise RuntimeError(f"Unsupported EMBEDDING_PROVIDER: {self.valves.EMBEDDING_PROVIDER}")
+            raise RuntimeError(message) from exc
+        finally:
+            httpx_client.close()
+        self._validate_dimensions(vector)
+        return vector
 
     def _validate_dimensions(self, vector: List[float]) -> None:
         if len(vector) != self.valves.EMBEDDING_DIMENSIONS:
@@ -1194,30 +1162,16 @@ class Pipeline:
             "the strongest support is:\n" + "\n".join(lines)
         )
 
-    def _post_json(
-        self,
-        url: str,
-        payload: dict,
-        headers: Optional[dict] = None,
-        timeout: int = 120,
-    ) -> dict:
-        req = request.Request(
-            url=url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json", **(headers or {})},
-            method="POST",
+    def _build_no_answer_message(self, merged: Dict[str, str]) -> str:
+        return (
+            "There is no information that answers this question from the clause search for "
+            f"Clause {merged['clause_number']} under termset {merged['termset_number']}. "
+            "Please elevate this question to your compliance lead."
         )
-        try:
-            with request.urlopen(req, timeout=timeout) as response:
-                return json.loads(response.read().decode("utf-8"))
-        except error.HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="ignore")
-            raise RuntimeError(f"HTTP {exc.code} from {url}: {body}") from exc
-        except Exception as exc:  # noqa: BLE001
-            raise RuntimeError(f"Error calling {url}: {exc}") from exc
 
     def _get_connection(self) -> psycopg.Connection:
-        return psycopg.connect(self.valves.DATABASE_URL, row_factory=dict_row)
+        database_url = self._require_config(self.valves.DATABASE_URL, "DATABASE_URL")
+        return psycopg.connect(database_url, row_factory=dict_row)
 
     def _table_identifier(self):
         return sql.Identifier(self._validate_table_name(self.valves.CHUNK_TABLE_NAME))
