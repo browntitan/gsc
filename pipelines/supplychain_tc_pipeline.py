@@ -5,7 +5,7 @@ date: 2026-03-22
 version: 1.1
 license: MIT
 description: Single-file supply-chain internal policy pipeline with LLM-first input extraction and direct Postgres retrieval.
-requirements: psycopg[binary]
+requirements: psycopg[binary],requests,httpx[http2],langchain-openai
 """
 
 from __future__ import annotations
@@ -17,6 +17,9 @@ import re
 from typing import Any, Dict, Generator, List, Optional, Union
 from urllib import error, request
 
+import httpx
+import requests
+from langchain_openai import AzureOpenAIEmbeddings
 from pydantic import BaseModel, Field, model_validator
 
 import psycopg
@@ -117,6 +120,21 @@ class Pipeline:
         )
         OLLAMA_CHAT_MODEL: str = Field(default=os.getenv("OLLAMA_CHAT_MODEL", "gpt-oss:20b"))
         OLLAMA_EMBED_MODEL: str = Field(default=os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text"))
+        AZURE_OPENAI_ENDPOINT: str = Field(
+            default=os.getenv("AZURE_OPENAI_ENDPOINT", os.getenv("AZURE_OPENAI_BASE_URL", ""))
+        )
+        AZURE_OPENAI_DEPLOYMENT_NAME: str = Field(
+            default=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", os.getenv("AZURE_OPENAI_CHAT_MODEL", ""))
+        )
+        AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME: str = Field(
+            default=os.getenv(
+                "AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME",
+                os.getenv("AZURE_OPENAI_EMBED_MODEL", ""),
+            )
+        )
+        AZURE_OPENAI_API_VERSION: str = Field(
+            default=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01")
+        )
         AZURE_OPENAI_BASE_URL: str = Field(default=os.getenv("AZURE_OPENAI_BASE_URL", ""))
         AZURE_OPENAI_API_KEY: str = Field(default=os.getenv("AZURE_OPENAI_API_KEY", ""))
         AZURE_OPENAI_CHAT_MODEL: str = Field(default=os.getenv("AZURE_OPENAI_CHAT_MODEL", ""))
@@ -932,6 +950,69 @@ class Pipeline:
         cleaned = re.sub(r"\s+", " ", cleaned).strip(" -:,.?")
         return cleaned or None
 
+    def _require_config(self, value: Optional[Any], name: str) -> str:
+        cleaned = self._clean_optional(value)
+        if not cleaned:
+            raise RuntimeError(f"{name} must be set")
+        return cleaned
+
+    def _azure_endpoint_root(self) -> str:
+        endpoint = self._clean_optional(self.valves.AZURE_OPENAI_ENDPOINT) or self._clean_optional(
+            self.valves.AZURE_OPENAI_BASE_URL
+        )
+        endpoint = self._require_config(
+            endpoint,
+            "AZURE_OPENAI_ENDPOINT",
+        ).rstrip("/")
+        if "/openai/" in endpoint.lower():
+            endpoint = endpoint[: endpoint.lower().index("/openai/")]
+        return endpoint.rstrip("/")
+
+    def _azure_api_version(self) -> str:
+        return self._require_config(self.valves.AZURE_OPENAI_API_VERSION, "AZURE_OPENAI_API_VERSION")
+
+    def _azure_headers(self) -> Dict[str, str]:
+        return {
+            "api-key": self._require_config(self.valves.AZURE_OPENAI_API_KEY, "AZURE_OPENAI_API_KEY"),
+            "Content-Type": "application/json",
+        }
+
+    def _azure_chat_url(self, deployment: str) -> str:
+        return (
+            f"{self._azure_endpoint_root()}/openai/deployments/{deployment}/chat/completions"
+            f"?api-version={self._azure_api_version()}"
+        )
+
+    def _azure_embedding_url(self, deployment: str) -> str:
+        return (
+            f"{self._azure_endpoint_root()}/openai/deployments/{deployment}/embeddings"
+            f"?api-version={self._azure_api_version()}"
+        )
+
+    def _post_json_requests(
+        self,
+        url: str,
+        payload: dict,
+        headers: Optional[dict] = None,
+        timeout: int = 120,
+        verify: bool = False,
+    ) -> dict:
+        response = requests.post(
+            url=url,
+            json=payload,
+            headers={"Content-Type": "application/json", **(headers or {})},
+            timeout=timeout,
+            verify=verify,
+        )
+        try:
+            response.raise_for_status()
+        except Exception as exc:
+            raise RuntimeError(f"HTTP {response.status_code} from {url}: {response.text}") from exc
+        try:
+            return response.json()
+        except Exception as exc:
+            raise RuntimeError(f"Error decoding JSON from {url}: {exc}") from exc
+
     def _resolve_provider(self, value: Optional[str], fallback: str = "ollama") -> str:
         raw = self._clean_optional(value) or fallback
         normalized = raw.strip().lower().replace("-", "_").replace(" ", "_")
@@ -960,11 +1041,13 @@ class Pipeline:
             raise RuntimeError(f"OLLAMA_CHAT_MODEL must be set when {role} provider is ollama")
 
         if provider == "azure_openai":
-            model = self._clean_optional(self.valves.AZURE_OPENAI_CHAT_MODEL)
+            model = self._clean_optional(self.valves.AZURE_OPENAI_DEPLOYMENT_NAME) or self._clean_optional(
+                self.valves.AZURE_OPENAI_CHAT_MODEL
+            )
             if model:
                 return model
             raise RuntimeError(
-                f"AZURE_OPENAI_CHAT_MODEL must be set when {role} provider is azure_openai"
+                f"AZURE_OPENAI_DEPLOYMENT_NAME must be set when {role} provider is azure_openai"
             )
 
         raise RuntimeError(f"Unsupported provider: {provider}")
@@ -981,11 +1064,13 @@ class Pipeline:
             raise RuntimeError("OLLAMA_EMBED_MODEL must be set when embedding provider is ollama")
 
         if provider == "azure_openai":
-            model = self._clean_optional(self.valves.AZURE_OPENAI_EMBED_MODEL)
+            model = self._clean_optional(
+                self.valves.AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME
+            ) or self._clean_optional(self.valves.AZURE_OPENAI_EMBED_MODEL)
             if model:
                 return model
             raise RuntimeError(
-                "AZURE_OPENAI_EMBED_MODEL must be set when embedding provider is azure_openai"
+                "AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME must be set when embedding provider is azure_openai"
             )
 
         raise RuntimeError(f"Unsupported provider: {provider}")
@@ -1019,20 +1104,16 @@ class Pipeline:
             return content
 
         if provider == "azure_openai":
-            if not self._clean_optional(self.valves.AZURE_OPENAI_BASE_URL):
-                raise RuntimeError("AZURE_OPENAI_BASE_URL must be set when using azure_openai")
-            if not self._clean_optional(self.valves.AZURE_OPENAI_API_KEY):
-                raise RuntimeError("AZURE_OPENAI_API_KEY must be set when using azure_openai")
             payload = {
-                "model": model,
                 "messages": messages,
                 "temperature": temperature,
             }
-            response = self._post_json(
-                self.valves.AZURE_OPENAI_BASE_URL.rstrip("/") + "/chat/completions",
+            response = self._post_json_requests(
+                self._azure_chat_url(model),
                 payload,
-                headers={"api-key": self.valves.AZURE_OPENAI_API_KEY},
+                headers=self._azure_headers(),
                 timeout=timeout,
+                verify=False,
             )
             choices = response.get("choices") or []
             if not choices:
@@ -1069,25 +1150,26 @@ class Pipeline:
             return vector
 
         if provider == "azure_openai":
-            if not self._clean_optional(self.valves.AZURE_OPENAI_BASE_URL):
-                raise RuntimeError("AZURE_OPENAI_BASE_URL must be set when embedding provider is azure_openai")
-            if not self._clean_optional(self.valves.AZURE_OPENAI_API_KEY):
-                raise RuntimeError("AZURE_OPENAI_API_KEY must be set when embedding provider is azure_openai")
-            payload = {
-                "model": model,
-                "input": text,
-                "dimensions": self.valves.EMBEDDING_DIMENSIONS,
-            }
-            response = self._post_json(
-                self.valves.AZURE_OPENAI_BASE_URL.rstrip("/") + "/embeddings",
-                payload,
-                headers={"api-key": self.valves.AZURE_OPENAI_API_KEY},
+            os.environ["AZURE_OPENAI_API_KEY"] = self._require_config(
+                self.valves.AZURE_OPENAI_API_KEY,
+                "AZURE_OPENAI_API_KEY",
+            )
+            os.environ["AZURE_OPENAI_ENDPOINT"] = self._azure_endpoint_root()
+
+            httpx_client = httpx.Client(
+                http2=True,
+                verify=False,
                 timeout=self.valves.REQUEST_TIMEOUT_SECONDS,
             )
-            data = response.get("data") or []
-            if not data or "embedding" not in data[0]:
-                raise RuntimeError("Azure OpenAI returned no embeddings")
-            vector = data[0]["embedding"]
+            try:
+                embeddings = AzureOpenAIEmbeddings(
+                    azure_deployment=model,
+                    api_version=self._azure_api_version(),
+                    http_client=httpx_client,
+                )
+                vector = embeddings.embed_query(text)
+            finally:
+                httpx_client.close()
             self._validate_dimensions(vector)
             return vector
 
