@@ -343,7 +343,7 @@ class Pipeline:
         )
         search_status = self._search_status_message(status_decision, merged)
         if search_status:
-            yield self._status_details("Search", search_status, done=False)
+            yield self._status_details("Search", search_status, done=True)
 
         yield self._status_details(
             "Extraction",
@@ -352,13 +352,7 @@ class Pipeline:
                 parsed=parsed,
                 merged=merged,
             ),
-            done=False,
-        )
-
-        yield self._status_details(
-            "Retrieval",
-            self._retrieval_status_message(merged),
-            done=False,
+            done=True,
         )
 
         try:
@@ -376,6 +370,12 @@ class Pipeline:
             yield message
             return
 
+        yield self._status_details(
+            "Retrieval",
+            self._retrieval_status_message(merged),
+            done=True,
+        )
+
         if hits.get("fallback_used") and hits.get("requested_section_target"):
             yield self._status_details(
                 "Retrieval",
@@ -385,7 +385,7 @@ class Pipeline:
                     f"{merged['clause_number']} under termset {merged['termset_number']}; "
                     f"falling back to the full clause in collection '{self.valves.DEFAULT_COLLECTION_NAME}'."
                 ),
-                done=False,
+                done=True,
             )
 
         hits = hits["hits"]
@@ -1433,9 +1433,7 @@ class Pipeline:
                 except Exception:
                     metadata = {}
 
-            source_doc = self._clean_optional(hit.get("source_doc")) or "unknown-source"
             section_title = self._clean_optional(hit.get("section_title")) or "untitled"
-            external_id = self._clean_optional(hit.get("external_id")) or "unknown"
             score_raw = hit.get("score")
             try:
                 score = f"{float(score_raw):.4f}"
@@ -1448,15 +1446,11 @@ class Pipeline:
                 excerpt = excerpt[:277].rstrip() + "..."
 
             segment_title = self._clean_optional(metadata.get("segment_title"))
-            chunk_index = metadata.get("chunk_index")
+            display_title = section_title
+            if segment_title and segment_title.lower() not in section_title.lower():
+                display_title = f"{section_title} | {segment_title}"
 
-            lines.append(
-                f"[S{idx}] {source_doc} | {section_title} | external_id={external_id} | score={score}"
-            )
-            if segment_title:
-                lines.append(f"Segment: {segment_title}")
-            if chunk_index is not None:
-                lines.append(f"Chunk Index: {chunk_index}")
+            lines.append(f"[S{idx}] {display_title} | score={score}")
             if excerpt:
                 lines.append(f"Excerpt: {excerpt}")
             lines.append("")
